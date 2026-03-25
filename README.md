@@ -1,76 +1,126 @@
 # Agency Colony
 
-A full-featured agency resource management platform built as a single-page app with Supabase backend and Netlify serverless functions.
+A complete, production-ready resource management platform built for digital agencies. One codebase, 13 screens, zero framework bloat.
 
-## Features (13 screens)
+Built with vanilla JavaScript, Supabase, and Netlify — deployed and battle-tested at a real agency.
 
-1. **Home Feed** - Dashboard with team stats, birthday notifications, sustainability calendar, and activity timeline
-2. **Deal Flow / BD Pipeline** - Kanban board + list view for business development deals with stages, POC assignment, and company filtering
-3. **Team Dashboard** (Leadership) - Monthly allocation planner with team utilization heatmaps
-4. **Work Planner** - Daily task management with drag-and-drop reordering, calendar archive, and auto-rollover of incomplete tasks
-5. **Weekly Allocation** - Per-employee time allocation across client projects (week/month view)
-6. **Leave Center** - Leave request submission, approval workflow, balance tracking, and cycle management
-7. **People Directory** - Employee directory with utilization data, department filters, and profile cards
-8. **Clients** - Client/project management with active/archived states
-9. **Employee Profile** - Personal profile editing, invoice uploads, allocation history
-10. **Invoice Center** - Monthly invoice tracking with upload status per employee
-11. **Bugs & Features Board** - Internal feedback board with upvotes, replies, status tracking, and email notifications
-12. **Admin Settings** - User access control, department management, leave cycle configuration
-13. **Client Analytics** - LinkedIn analytics import, AI-powered performance insights (via OpenAI)
+---
+
+## What You Get
+
+### Business Development
+- **Deal Flow Pipeline** — Kanban board with drag-and-drop, stage tracking (Qualifying > Pitching > Proposal > Negotiating > Contracted), per-column sorting, company/brand switching
+- **Client Linking** — Connect deals to active clients when contracted, with mandatory linking enforcement
+- **Pipeline Stats** — Live counters for open deals, overdue, stalled, contracted, and lost — each clickable as a filter
+- **Multi-brand Support** — Run separate BD pipelines for different brands/entities under one roof
+
+### Resource Management
+- **Team Dashboard** — Bird's-eye view of who's working on what, with utilization heatmaps and department breakdowns
+- **Weekly Allocation** — Assign team hours across client projects, with week and month views
+- **Work Planner** — Daily task management with drag-and-drop reordering, auto-rollover of incomplete tasks, and weekly archiving of completed items
+
+### People & Leave
+- **Leave Center** — Submit requests, approval workflows, balance tracking, cycle management, and leadership overviews
+- **People Directory** — Employee profiles with utilization data, department filters, and profile cards
+- **Employee Profiles** — Personal details, allocation history, invoice uploads
+
+### Client & Finance
+- **Client Management** — Active/archived client tracking with ownership and engagement types
+- **Invoice Center** — Monthly invoice tracking with upload status per employee
+- **Client Analytics** — LinkedIn analytics import with AI-powered performance insights
+
+### Internal Tools
+- **Bugs & Features Board** — Internal feedback system with upvotes, replies, status tracking, and email notifications
+- **Admin Settings** — User access control, department management, leave cycle configuration
+- **Home Feed** — Dashboard with team stats, birthdays, sustainability calendar, and activity timeline
+
+---
+
+## Key Capabilities
+
+| Capability | Details |
+|---|---|
+| **Authentication** | Google OAuth (domain-restricted) via Supabase Auth |
+| **Role-based Access** | Superadmin, Leadership, Finance, and Employee roles with granular screen/action permissions |
+| **Dark Mode** | Full light/dark theme support with system preference detection |
+| **Mobile Responsive** | Bottom tab navigation, touch-friendly layouts across all screens |
+| **Real-time Updates** | Supabase subscriptions for live data |
+| **Email Notifications** | Automated reminders for tasks, leaves, invoices, birthdays, and allocation |
+| **Row-Level Security** | Every table locked down with Supabase RLS policies — users only see what they should |
+| **Excel Export** | Export allocations and reports to .xlsx |
+| **Drag & Drop** | Kanban boards, task reordering, priority management |
+| **Scheduled Jobs** | Netlify cron functions for daily reminders, weekly nudges, and invoice alerts |
+
+---
 
 ## Tech Stack
 
-- **Frontend**: Vanilla JS single-page app (no framework), CSS with dark mode support
-- **Backend**: Supabase (PostgreSQL + Auth + Storage + RLS)
-- **Auth**: Google OAuth via Supabase Auth (domain-restricted)
-- **Serverless**: Netlify Functions (scheduled reminders, email notifications)
-- **Email**: Resend API for transactional emails
-- **Charts**: Chart.js for analytics visualizations
-- **Export**: SheetJS (xlsx) for Excel exports
+| Layer | Technology |
+|---|---|
+| Frontend | Vanilla JS — single `app.js`, no build step, no framework |
+| Styling | Single `styles.css` with CSS variables for theming |
+| Database | Supabase (PostgreSQL + Auth + Storage + RLS) |
+| Auth | Google OAuth via Supabase, domain-restricted |
+| Serverless | Netlify Functions (scheduled + webhook) |
+| Email | Resend API for transactional emails |
+| Charts | Chart.js for analytics visualizations |
+| Export | SheetJS (xlsx) for Excel exports |
+
+---
 
 ## Quick Start
 
-1. Clone this repository
-2. Create a Supabase project at [supabase.com](https://supabase.com)
-3. Run the database migrations (see [SETUP.md](SETUP.md))
-4. Configure Google OAuth in Supabase
-5. Set environment variables
-6. Deploy to Netlify (or any static host)
+```bash
+git clone https://github.com/mojaswi/agency-colony.git
+cd agency-colony
+```
 
-See **[SETUP.md](SETUP.md)** for detailed setup instructions.
+1. Create a [Supabase](https://supabase.com) project
+2. Run the 52 database migrations
+3. Configure Google OAuth for your domain
+4. Set environment variables (see `.env.example`)
+5. Deploy to Netlify
+
+See **[SETUP.md](SETUP.md)** for the full step-by-step guide.
+
+---
 
 ## Project Structure
 
 ```
 .
-├── index.html              # Single-page app HTML shell
-├── app.js                  # All application logic (~460KB)
-├── styles.css              # All styles with dark mode support
-├── assets/                 # Favicons, logos, SVG icons
+├── index.html              # Single-page app shell
+├── app.js                  # All application logic (~12,000 lines)
+├── styles.css              # All styles with dark mode (~4,800 lines)
+├── assets/                 # Favicons, logos, SVGs
 ├── vendor/                 # Supabase JS, Chart.js, SheetJS
 ├── netlify/
-│   ├── functions/          # Serverless functions
-│   │   ├── runtime-config.js           # Exposes env vars to frontend
-│   │   ├── daily-reminders.js          # Scheduled: task reminders, birthday alerts, leave digests
-│   │   ├── weekly-allocation-reminder.js # Scheduled: Monday allocation reminders
-│   │   ├── invoice-reminder.js         # Scheduled: invoice upload reminders (25th+)
-│   │   ├── leave-submitted.js          # Webhook: leave approval notifications
-│   │   ├── feature-request-notify.js   # Webhook: bug/feature request notifications
-│   │   ├── analyze-analytics.js        # AI-powered analytics insights
-│   │   └── lib/                        # Shared utilities (config, email, supabase client)
-│   └── functions/lib/
-│       ├── config.js
-│       ├── email.js
-│       ├── notifications.js
-│       └── supabase-admin.js
+│   └── functions/          # 8 serverless functions
+│       ├── runtime-config.js              # Env vars for frontend
+│       ├── daily-reminders.js             # Task, birthday, leave reminders
+│       ├── weekly-allocation-reminder.js  # Monday allocation nudges
+│       ├── invoice-reminder.js            # Invoice upload reminders
+│       ├── leave-submitted.js             # Leave approval notifications
+│       ├── feature-request-notify.js      # Bug/feature notifications
+│       ├── analyze-analytics.js           # AI analytics insights
+│       └── lib/                           # Shared utilities
 ├── supabase/
-│   └── migrations/         # Database schema migrations
-├── netlify.toml            # Netlify configuration
-├── .env.example            # Environment variable template
-├── robots.txt              # Blocks all crawlers
-└── package.json            # Dependencies (@supabase/supabase-js)
+│   └── migrations/         # 52 schema migrations
+├── .env.example            # All required environment variables
+├── netlify.toml            # Netlify config with cron schedules
+└── SETUP.md                # Detailed setup guide
 ```
+
+---
+
+## Who This Is For
+
+- **Agency founders** who want a custom internal tool without paying for 5 different SaaS subscriptions
+- **Small-to-mid agencies** (5–50 people) managing clients, resources, and BD pipelines
+- **Technical teams** who want full control over their ops platform
+
+---
 
 ## License
 
-Proprietary. For use by the receiving agency only.
+MIT — use it, fork it, make it yours.
