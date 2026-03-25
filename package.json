@@ -1,0 +1,14 @@
+{
+  "name": "ant-colony-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "mkdir -p vendor && cp node_modules/@supabase/supabase-js/dist/umd/supabase.js vendor/supabase.js",
+    "dev": "netlify dev",
+    "serve": "npx serve . -p 5173"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@supabase/supabase-js": "2.98.0"
+  }
+}

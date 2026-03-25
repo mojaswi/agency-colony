@@ -1,0 +1,32 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+  ignore = "if [ -z \"$CACHED_COMMIT\" ]; then exit 1; fi; git diff --quiet $CACHED_COMMIT HEAD -- . ':!*.md' ':!.claude'"
+
+[context.deploy-preview]
+  ignore = "true"
+
+[context.branch-deploy]
+  ignore = "true"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[functions."daily-reminders"]
+  schedule = "30 4 * * *"
+
+[functions."weekly-allocation-reminder"]
+  schedule = "30 4 * * 1"
+
+[functions."invoice-reminder"]
+  schedule = "30 4 * * *"

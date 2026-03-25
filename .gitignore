@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Local Netlify folder
+.netlify/
+
+# Claude Code
+.claude/
+
+# Misc
+deno.lock
+supabase/.temp/

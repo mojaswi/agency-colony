@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Agency Colony - Resource &amp; Leave Platform</title>
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+  <meta name="googlebot" content="noindex, nofollow" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png" />
+  <link rel="apple-touch-icon" href="assets/favicon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=20260324b" />
+</head>
+<body>
+  <!-- Splash screen — covers everything until auth resolves -->
+  <div id="splashScreen" class="splash-screen">
+    <svg class="splash-logo" viewBox="0 0 83 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M82.4759 4.4827C79.7392 0.617762 75.9253 3.49426 72.5746 4.62022C70.3708 5.34507 67.8716 5.17317 65.6765 5.84932C64.6542 6.13869 63.7072 6.84635 62.7719 7.26751C62.4823 7.38784 62.2564 7.42796 62.1145 7.35919C61.654 6.97241 62.1376 6.1215 62.3114 5.49979C62.6705 4.57724 63.0122 3.5974 62.9051 2.70064C62.1405 -1.75735 54.1593 -0.0268709 52.636 3.08169C51.5964 4.62308 52.1292 7.3506 54.4518 6.79192C55.2482 6.61142 56.0793 6.02982 56.7628 5.43962C57.3448 5.007 59.2707 2.91839 59.5081 3.56589C59.2649 4.66892 58.3642 5.72326 57.8632 6.7604C57.0437 8.17573 56.6035 9.71712 54.9817 9.93773C48.5064 9.85178 49.3086 11.8516 43.618 7.42796C41.6401 6.0556 39.2538 6.44238 37.0992 7.31622C34.8375 8.07259 30.5949 10.8116 29.9028 6.94663C29.6248 4.82364 30.1026 1.82394 27.6295 0.835505C24.554 -0.221693 20.462 2.0245 19.4832 4.98408C18.8982 6.45098 19.6569 8.91777 21.5914 8.37915C23.3 8.02102 24.6206 4.84656 25.6892 3.92974C26.3871 3.49712 25.7066 5.5886 25.6458 5.87797C25.0637 7.95226 24.6669 11.1038 21.8289 10.6454C20.3259 10.4248 18.9532 9.43635 17.5545 8.8748C14.7628 7.55975 12.3533 9.96351 10.3638 11.7255C6.88869 14.8799 1.68756 16.7794 0.181668 21.4953C-0.385939 22.9135 0.395969 25.5264 2.25517 24.303C3.88849 22.8762 4.00722 20.3579 5.51601 18.8107C6.01701 18.1604 7.55186 16.8998 6.5962 18.7133C6.10099 19.6445 5.33936 20.9624 5.46967 22.0597C5.54786 23.0825 6.32688 23.7014 7.18987 23.3318C9.48057 22.0396 8.66101 18.5615 10.5173 16.8912C11.2587 16.4012 11.4614 18.7506 12.4257 17.745C13.5378 16.258 13.5841 13.5677 15.6403 12.7741C17.2852 12.0464 19.3644 12.8744 20.7371 14.1493C22.718 15.8254 22.495 18.6933 20.7661 20.5212C18.8721 22.8333 15.4723 23.7615 14.1112 26.5234C11.9392 31.7349 18.5739 33.7462 21.5625 36.445C23.3667 38.0982 24.5772 40.5764 24.0617 43.0318C23.1118 47.613 18.2003 50.0396 16.5699 54.2885C15.5679 56.5633 16.1297 59.9326 18.849 60.646C20.5112 61.1159 22.5268 60.4827 24.3136 60.6976C27.4557 60.7663 29.7204 64.5711 32.8422 63.9265C33.459 63.7374 33.9108 63.2102 34.0151 62.5856C34.2902 60.1418 31.6954 58.0446 29.6451 57.0103C27.6179 55.7096 23.2479 55.9474 23.1263 53.2685C23.497 50.1027 28.4838 50.0855 28.4027 44.3841C28.4461 41.095 26.6478 38.1354 26.0193 34.9753C25.501 32.371 27.1951 30.5574 28.9558 33.3336C30.7716 36.3276 31.8083 40.4074 34.9678 42.1465C36.187 42.7997 37.7161 42.8971 38.6573 41.9774C40.5976 39.7427 37.7537 37.0839 35.7324 36.0096C31.539 33.9209 30.9946 28.7839 27.5194 28.0935C26.0483 27.7783 25.1332 29.42 24.0819 29.9958C23.7055 30.1506 23.4217 29.8927 23.3927 29.3312C23.8619 24.0251 33.9629 24.6268 34.3133 19.1488C34.3423 17.7994 33.8152 16.3354 34.435 15.0518C35.5586 12.9346 38.0665 11.376 40.4701 11.3559C43.062 11.3502 44.3073 13.9058 45.9985 15.3985C48.5991 17.5759 50.6118 15.261 52.7084 13.8571C53.8929 13.1322 55.0918 13.7626 55.0049 15.1807C54.9586 16.3411 54.3128 17.4527 53.4903 18.3065C51.6746 20.3006 48.7641 20.3922 46.43 21.4638C42.5813 23.157 41.9731 27.4975 44.1017 30.8038C46.737 35.1243 52.7663 39.6396 50.0644 45.2579C48.3992 48.1602 44.7243 49.7388 42.923 52.5838C41.449 54.5463 40.3166 58.4428 43.4617 59.2278C44.8227 59.4914 46.207 58.9356 47.5536 58.7465C49.0595 58.503 50.5625 58.7035 52.0858 59.3567C54.614 60.4111 56.7483 62.6573 59.6471 62.5828C60.846 62.5828 62.2216 61.9152 62.546 60.8208C63.0875 58.8811 61.1993 57.5747 59.4676 56.9215C57.5707 56.1422 55.3553 56.1995 53.499 55.5864C51.5558 55.0162 50.6784 53.0193 51.3357 51.1427C54.2722 44.4901 54.2549 41.3958 51.3039 34.6916C50.2729 32.5285 49.3694 27.5491 53.3368 28.7467C54.8254 29.291 56.2878 30.2594 57.7561 30.715C59.2533 31.2708 60.7418 31.2794 61.877 32.3366C64.9757 36.382 58.2802 38.9663 56.5832 41.9516C55.9345 42.9974 55.4856 44.3096 55.7202 45.5329C55.8824 46.6188 56.9018 47.3436 57.9124 46.8279C59.2185 46.1088 60.4783 44.301 61.9697 43.5074C65.3348 41.6823 68.6564 39.7771 69.4962 35.746C70.2347 32.5429 68.7723 28.8326 65.9313 27.0764C64.1619 25.8988 61.8162 25.7327 59.7977 25.4806C58.1644 25.2972 57.4288 23.8819 58.1905 22.5582C58.7986 21.4065 59.9425 20.567 60.9213 19.7648C62.7284 18.4182 64.3675 16.3439 64.8714 14.1379C65.2073 12.9346 65.1465 11.6539 66.0327 10.7142C67.0926 9.55381 69.7916 9.05816 71.6624 8.25882C73.0438 7.71446 74.4049 6.95522 75.8789 6.72602C77.463 6.40514 78.827 7.45947 78.2362 9.07249C76.4958 13.3471 71.1672 15.9371 70.6691 20.8363C70.562 22.9679 72.8324 23.667 74.2833 22.2115C75.9542 20.7819 76.0614 17.51 77.2632 15.9801C77.9843 15.3097 76.7593 19.7104 78.7199 19.0342C80.4603 17.745 79.6581 14.6221 80.5588 12.7541C81.4768 10.1698 84.0658 7.35919 82.5164 4.53427L82.4846 4.47983L82.4759 4.4827ZM26.3582 2.3024C25.2635 3.09888 22.0287 6.769 20.7806 5.09009C20.4852 4.36523 21.0673 3.56016 21.5798 3.05591C22.5645 2.12477 23.9372 1.51452 25.2519 1.15352C26.4827 0.79826 28.0639 0.801125 26.4132 2.25656L26.3582 2.30527V2.3024ZM60.0612 2.04455C58.4772 2.67486 55.949 4.57151 54.2722 3.90109C53.2558 3.1963 54.5763 2.0245 55.3119 1.66064C56.5745 0.995947 58.1267 0.732364 59.5458 0.712309C60.846 0.692253 61.9697 1.0819 60.1278 2.00731L60.0612 2.04169V2.04455Z" fill="currentColor"/></svg>
+    <p class="splash-title">Agency Colony</p>
+    <div class="splash-spinner"></div>
+    <p class="splash-text">Setting up your workspace...</p>
+  </div>
+
+  <div class="app-shell">
+    <header class="global-header hidden">
+      <a href="https://colony.youragency.com" class="header-logo" target="_blank" rel="noopener">
+        <svg class="header-ant-icon" viewBox="0 0 83 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Agency Colony"><path d="M82.4759 4.4827C79.7392 0.617762 75.9253 3.49426 72.5746 4.62022C70.3708 5.34507 67.8716 5.17317 65.6765 5.84932C64.6542 6.13869 63.7072 6.84635 62.7719 7.26751C62.4823 7.38784 62.2564 7.42796 62.1145 7.35919C61.654 6.97241 62.1376 6.1215 62.3114 5.49979C62.6705 4.57724 63.0122 3.5974 62.9051 2.70064C62.1405 -1.75735 54.1593 -0.0268709 52.636 3.08169C51.5964 4.62308 52.1292 7.3506 54.4518 6.79192C55.2482 6.61142 56.0793 6.02982 56.7628 5.43962C57.3448 5.007 59.2707 2.91839 59.5081 3.56589C59.2649 4.66892 58.3642 5.72326 57.8632 6.7604C57.0437 8.17573 56.6035 9.71712 54.9817 9.93773C48.5064 9.85178 49.3086 11.8516 43.618 7.42796C41.6401 6.0556 39.2538 6.44238 37.0992 7.31622C34.8375 8.07259 30.5949 10.8116 29.9028 6.94663C29.6248 4.82364 30.1026 1.82394 27.6295 0.835505C24.554 -0.221693 20.462 2.0245 19.4832 4.98408C18.8982 6.45098 19.6569 8.91777 21.5914 8.37915C23.3 8.02102 24.6206 4.84656 25.6892 3.92974C26.3871 3.49712 25.7066 5.5886 25.6458 5.87797C25.0637 7.95226 24.6669 11.1038 21.8289 10.6454C20.3259 10.4248 18.9532 9.43635 17.5545 8.8748C14.7628 7.55975 12.3533 9.96351 10.3638 11.7255C6.88869 14.8799 1.68756 16.7794 0.181668 21.4953C-0.385939 22.9135 0.395969 25.5264 2.25517 24.303C3.88849 22.8762 4.00722 20.3579 5.51601 18.8107C6.01701 18.1604 7.55186 16.8998 6.5962 18.7133C6.10099 19.6445 5.33936 20.9624 5.46967 22.0597C5.54786 23.0825 6.32688 23.7014 7.18987 23.3318C9.48057 22.0396 8.66101 18.5615 10.5173 16.8912C11.2587 16.4012 11.4614 18.7506 12.4257 17.745C13.5378 16.258 13.5841 13.5677 15.6403 12.7741C17.2852 12.0464 19.3644 12.8744 20.7371 14.1493C22.718 15.8254 22.495 18.6933 20.7661 20.5212C18.8721 22.8333 15.4723 23.7615 14.1112 26.5234C11.9392 31.7349 18.5739 33.7462 21.5625 36.445C23.3667 38.0982 24.5772 40.5764 24.0617 43.0318C23.1118 47.613 18.2003 50.0396 16.5699 54.2885C15.5679 56.5633 16.1297 59.9326 18.849 60.646C20.5112 61.1159 22.5268 60.4827 24.3136 60.6976C27.4557 60.7663 29.7204 64.5711 32.8422 63.9265C33.459 63.7374 33.9108 63.2102 34.0151 62.5856C34.2902 60.1418 31.6954 58.0446 29.6451 57.0103C27.6179 55.7096 23.2479 55.9474 23.1263 53.2685C23.497 50.1027 28.4838 50.0855 28.4027 44.3841C28.4461 41.095 26.6478 38.1354 26.0193 34.9753C25.501 32.371 27.1951 30.5574 28.9558 33.3336C30.7716 36.3276 31.8083 40.4074 34.9678 42.1465C36.187 42.7997 37.7161 42.8971 38.6573 41.9774C40.5976 39.7427 37.7537 37.0839 35.7324 36.0096C31.539 33.9209 30.9946 28.7839 27.5194 28.0935C26.0483 27.7783 25.1332 29.42 24.0819 29.9958C23.7055 30.1506 23.4217 29.8927 23.3927 29.3312C23.8619 24.0251 33.9629 24.6268 34.3133 19.1488C34.3423 17.7994 33.8152 16.3354 34.435 15.0518C35.5586 12.9346 38.0665 11.376 40.4701 11.3559C43.062 11.3502 44.3073 13.9058 45.9985 15.3985C48.5991 17.5759 50.6118 15.261 52.7084 13.8571C53.8929 13.1322 55.0918 13.7626 55.0049 15.1807C54.9586 16.3411 54.3128 17.4527 53.4903 18.3065C51.6746 20.3006 48.7641 20.3922 46.43 21.4638C42.5813 23.157 41.9731 27.4975 44.1017 30.8038C46.737 35.1243 52.7663 39.6396 50.0644 45.2579C48.3992 48.1602 44.7243 49.7388 42.923 52.5838C41.449 54.5463 40.3166 58.4428 43.4617 59.2278C44.8227 59.4914 46.207 58.9356 47.5536 58.7465C49.0595 58.503 50.5625 58.7035 52.0858 59.3567C54.614 60.4111 56.7483 62.6573 59.6471 62.5828C60.846 62.5828 62.2216 61.9152 62.546 60.8208C63.0875 58.8811 61.1993 57.5747 59.4676 56.9215C57.5707 56.1422 55.3553 56.1995 53.499 55.5864C51.5558 55.0162 50.6784 53.0193 51.3357 51.1427C54.2722 44.4901 54.2549 41.3958 51.3039 34.6916C50.2729 32.5285 49.3694 27.5491 53.3368 28.7467C54.8254 29.291 56.2878 30.2594 57.7561 30.715C59.2533 31.2708 60.7418 31.2794 61.877 32.3366C64.9757 36.382 58.2802 38.9663 56.5832 41.9516C55.9345 42.9974 55.4856 44.3096 55.7202 45.5329C55.8824 46.6188 56.9018 47.3436 57.9124 46.8279C59.2185 46.1088 60.4783 44.301 61.9697 43.5074C65.3348 41.6823 68.6564 39.7771 69.4962 35.746C70.2347 32.5429 68.7723 28.8326 65.9313 27.0764C64.1619 25.8988 61.8162 25.7327 59.7977 25.4806C58.1644 25.2972 57.4288 23.8819 58.1905 22.5582C58.7986 21.4065 59.9425 20.567 60.9213 19.7648C62.7284 18.4182 64.3675 16.3439 64.8714 14.1379C65.2073 12.9346 65.1465 11.6539 66.0327 10.7142C67.0926 9.55381 69.7916 9.05816 71.6624 8.25882C73.0438 7.71446 74.4049 6.95522 75.8789 6.72602C77.463 6.40514 78.827 7.45947 78.2362 9.07249C76.4958 13.3471 71.1672 15.9371 70.6691 20.8363C70.562 22.9679 72.8324 23.667 74.2833 22.2115C75.9542 20.7819 76.0614 17.51 77.2632 15.9801C77.9843 15.3097 76.7593 19.7104 78.7199 19.0342C80.4603 17.745 79.6581 14.6221 80.5588 12.7541C81.4768 10.1698 84.0658 7.35919 82.5164 4.53427L82.4846 4.47983L82.4759 4.4827ZM26.3582 2.3024C25.2635 3.09888 22.0287 6.769 20.7806 5.09009C20.4852 4.36523 21.0673 3.56016 21.5798 3.05591C22.5645 2.12477 23.9372 1.51452 25.2519 1.15352C26.4827 0.79826 28.0639 0.801125 26.4132 2.25656L26.3582 2.30527V2.3024ZM60.0612 2.04455C58.4772 2.67486 55.949 4.57151 54.2722 3.90109C53.2558 3.1963 54.5763 2.0245 55.3119 1.66064C56.5745 0.995947 58.1267 0.732364 59.5458 0.712309C60.846 0.692253 61.9697 1.0819 60.1278 2.00731L60.0612 2.04169V2.04455Z" fill="currentColor"/></svg>
+      </a>
+      <div class="header-center"></div>
+      <div class="header-right">
+        <button id="themeToggleBtn" class="theme-toggle-btn" type="button" aria-label="Toggle dark mode">
+          <svg class="theme-icon theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="theme-icon theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+        <button id="logoutBtn" class="sign-out-btn" type="button" disabled>Sign out</button>
+      </div>
+    </header>
+
+    <div class="body no-sidebar">
+      <aside class="sidebar">
+        <nav id="screen-nav" class="screen-nav">
+          <button id="loginNavButton" class="screen-link active sidebar-item" data-screen="login" data-role="all">Login</button>
+          <div class="sidebar-nav-separator" aria-hidden="true"></div>
+          <button class="screen-link sidebar-item" data-screen="home-feed" data-role="all">Home</button>
+          <button class="screen-link sidebar-item hidden" data-screen="bd-pipeline" data-role="all" id="dealFlowNavButton">Deal Flow</button>
+          <button class="screen-link sidebar-item leadership-only" data-screen="leadership-planner" data-role="leadership">Team Dashboard</button>
+          <button class="screen-link sidebar-item" data-screen="daily-tasklist" data-role="all">Work Planner</button>
+          <button class="screen-link sidebar-item" data-screen="my-allocations" data-role="all">Weekly Allocation</button>
+          <button class="screen-link sidebar-item" data-screen="leave-center" data-role="all" id="leaveNavButton">Leave Center</button>
+          <button class="screen-link sidebar-item" data-screen="people-directory" data-role="all">People</button>
+          <button class="screen-link sidebar-item" data-screen="client-projects" data-role="all">Clients</button>
+          <button class="screen-link sidebar-item hidden" data-screen="invoice-center" data-role="all" id="invoiceNavButton">Invoices</button>
+          <button class="screen-link sidebar-item superadmin-only" data-screen="admin-settings" data-role="admin">Admin Settings</button>
+        </nav>
+
+        <a href="https://colony.youragency.com" class="sidebar-brand" target="_blank" rel="noopener">
+          <img src="assets/colony-logo-the.svg" alt="the" class="sidebar-brand-the" />
+          <img src="assets/colony-logo-text.svg" alt="COLONY" class="sidebar-brand-colony" />
+        </a>
+      </aside>
+
+      <main class="canvas">
+        <section id="login" class="screen active">
+          <div class="login-content">
+            <div class="auth-actions">
+              <button id="signInBtn" class="google-btn" type="button">
+                <svg class="google-icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                  <path fill="none" d="M0 0h48v48H0z"></path>
+                </svg>
+                <span>Sign in with Google</span>
+              </button>
+            </div>
+            <p class="helper-text">Use your <code>@youragency.com</code> Workspace account to sign in.</p>
+            <button id="registerBtn" class="hidden" type="button">Register</button>
+            <p id="loginMessage" class="status hidden" aria-live="polite"></p>
+            <p id="authSessionLine" class="mini-meta hidden"></p>
+          </div>
+        </section>
+
+        <section id="home-feed" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow" id="homeGreeting">Overview</p>
+            </div>
+            <p class="mini-meta" id="homeTagline">What's happening at your agency?</p>
+          </div>
+          <div id="homeStatCards" class="home-stats"></div>
+          <div id="homeBirthdayPanel" class="birthday-panel hidden"></div>
+          <div id="homeSustainabilityPanel" class="sus-cal-panel hidden"></div>
+          <div id="homeFeedList" class="feed-list"></div>
+          <p id="homeFeedEmpty" class="mini-meta hidden">Nothing to show yet.</p>
+        </section>
+
+        <section id="daily-tasklist" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Self View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Work Planner</h2>
+            <p>Plan your week and track daily progress. Move tasks to Today when ready to work on them.</p>
+          </div>
+
+          <div class="panel">
+            <div class="editor-bar">
+              <h3 id="taskTodayLabel">Today's Focus</h3>
+              <label class="inline-filter leadership-only hidden" id="taskEmployeeFilterWrap">Employee
+                <select id="taskEmployeeFilter"></select>
+              </label>
+            </div>
+
+            <table id="dailyTaskTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>P</th>
+                  <th>Task</th>
+                  <th>Client</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th class="hidden" id="taskActionHeader">Action</th>
+                </tr>
+              </thead>
+              <tbody id="dailyTaskTableBody"></tbody>
+            </table>
+
+            <p id="dailyTaskNotice" class="mini-meta"></p>
+          </div>
+
+          <div class="panel">
+            <div class="editor-bar">
+              <h3>Weekly Planner</h3>
+            </div>
+
+            <table id="weeklyPlannerTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>P</th>
+                  <th>Task</th>
+                  <th>Client</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th class="hidden" id="weeklyTaskActionHeader">Action</th>
+                </tr>
+              </thead>
+              <tbody id="weeklyPlannerTableBody"></tbody>
+            </table>
+
+            <hr class="task-separator" />
+
+            <div class="editor-bar action-row">
+              <input id="newTaskTitleInput" type="text" placeholder="Task title" maxlength="25" />
+              <select id="newTaskClientSelect">
+                <option value="">Select client</option>
+              </select>
+              <input id="newTaskDescriptionInput" type="text" placeholder="Description (optional)" maxlength="50" />
+              <input id="newTaskDeadlineInput" type="date" class="hidden" />
+              <button id="addWeeklyTaskBtn" class="primary" type="button">Add</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Task Archive</h3>
+            <div class="archive-layout">
+              <div class="archive-calendar-col">
+                <div id="taskArchiveCalendar" class="archive-grid"></div>
+              </div>
+              <div id="archiveDayDetail" class="archive-detail-col hidden">
+                <div class="editor-bar">
+                  <h4 id="archiveDayDetailLabel"></h4>
+                  <button id="archiveDayDetailClose" class="ghost small">Close</button>
+                </div>
+                <table id="archiveDayDetailTable" class="m-card-table">
+                  <thead>
+                    <tr>
+                      <th>Task</th>
+                      <th>Client</th>
+                      <th>Description</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="archiveDayDetailBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="my-allocations" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Self View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Weekly Allocation</h2>
+            <p>Keep weekly distribution current. Employees update on Monday; leadership can adjust throughout the week.</p>
+          </div>
+
+          <div class="panel">
+            <div class="editor-bar alloc-toolbar">
+              <div class="week-nav">
+                <button id="allocWeekPrev" class="week-nav-btn" type="button" aria-label="Previous week">&lsaquo;</button>
+                <span id="allocWeekDisplay" class="week-nav-label">Week of …</span>
+                <button id="allocWeekNext" class="week-nav-btn" type="button" aria-label="Next week">&rsaquo;</button>
+                <select id="allocMonth" class="week-nav-month"></select>
+              </div>
+              <div class="alloc-toolbar-right">
+                <label class="inline-filter leadership-only hidden" id="allocEmployeeFilterWrap">Employee
+                  <select id="allocEmployeeFilter"></select>
+                </label>
+                <label class="inline-filter" id="allocClientFilterWrap">Client
+                  <select id="allocClientFilter">
+                    <option value="all">All clients</option>
+                  </select>
+                </label>
+                <button id="allocViewToggle" class="ghost small" type="button">Switch to hrs</button>
+              </div>
+            </div>
+
+            <table id="allocationTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th id="allocUnitHeader">Allocation %</th>
+                  <th>Type</th>
+                  <th>Last Updated</th>
+                  <th class="hidden" id="allocPopulateHeader">Action</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+
+            <div class="alloc-footer">
+              <p id="allocSummary" class="status alloc-total">Total allocation: 0%</p>
+              <div class="alloc-footer-actions">
+                <button id="addRow" class="ghost" type="button">Add</button>
+                <button id="saveAllocationsBtn" class="primary" type="button">Save Weekly Allocation</button>
+              </div>
+            </div>
+
+            <p id="allocEditPolicyNote" class="mini-meta"></p>
+            <p id="allocWeekNote" class="mini-meta"></p>
+          </div>
+
+          <div class="panel leadership-only">
+            <h3>Recent Leadership Overrides</h3>
+            <ul class="timeline">
+              <li>No overrides yet.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="leave-center" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Self View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Leave Center</h2>
+            <p>Submit requests, track status, and manage approvals through a policy-compliant workflow.</p>
+            <div id="onLeaveTodayBadge" class="leadership-only hidden" style="margin-top:8px">
+              <span class="chip info" id="onLeaveTodayCount">No one on leave today</span>
+            </div>
+          </div>
+
+          <div id="leaveCenterContent">
+            <div class="kpi-grid leave-grid">
+              <article class="kpi-card">
+                <p>Privilege Leave (PL)</p>
+                <h3 id="leavePlHeadline">Remaining 0</h3>
+                <small id="leavePlMeta">Allocated 0 | Taken 0</small>
+              </article>
+              <article class="kpi-card">
+                <p>Casual / Period Leave (CL)</p>
+                <h3 id="leaveClHeadline">Remaining 0</h3>
+                <small id="leaveClMeta">Allocated 0 | Taken 0</small>
+              </article>
+              <article class="kpi-card">
+                <p>Sick Leave (SL)</p>
+                <h3 id="leaveSlHeadline">Remaining 0</h3>
+                <small id="leaveSlMeta">Allocated 0 | Taken 0</small>
+              </article>
+              <article class="kpi-card">
+                <p>Cycle Summary</p>
+                <h3 id="leaveCycleLabel">Apr-Mar</h3>
+                <small id="leaveCycleMeta">Configured from policy settings</small>
+              </article>
+            </div>
+            <p id="leaveBalanceNotice" class="mini-meta">Leave balances are loaded from the active leave cycle.</p>
+
+            <div class="panel split">
+              <form id="leaveForm" class="leave-form">
+                <h3>Apply for Leave</h3>
+                <label>Leave Type
+                  <select id="leaveType">
+                    <option value="PL">Privilege Leave (PL)</option>
+                    <option value="CL">Casual / Period Leave (CL)</option>
+                    <option value="SL">Sick Leave (SL)</option>
+                  </select>
+                </label>
+                <div class="leave-date-row">
+                  <label>Start Date
+                    <input id="leaveStart" type="date" />
+                  </label>
+                  <label>End Date
+                    <input id="leaveEnd" type="date" />
+                  </label>
+                </div>
+                <label>Reason
+                  <textarea id="leaveReason" rows="2" placeholder="Short reason"></textarea>
+                </label>
+                <label id="medCertLabel" class="hidden">Medical Certificate (SL 3+ days)
+                  <input id="leaveMedicalCertificateUrl" type="url" placeholder="Certificate URL" />
+                </label>
+                <p id="leaveRuleHint" class="status"></p>
+                <button id="submitLeaveBtn" type="button" class="primary">Submit Leave Request</button>
+                <p id="leaveEmailNotice" class="mini-meta"></p>
+              </form>
+
+              <div>
+                <div class="section-header-row">
+                  <h3 id="holidayHeading">Upcoming Public Holidays</h3>
+                  <button id="holidayToggleBtn" class="ghost small" type="button">See all holidays</button>
+                </div>
+                <table id="holidayCalendarTable" class="m-card-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Holiday</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colspan="3">No upcoming holidays.</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div class="section-header-row team-leave-header">
+                  <h3 id="teamLeaveHeading">Team Leave (Next 30 Days)</h3>
+                  <button id="teamLeaveToggleBtn" class="ghost small hidden" type="button">See all team leave</button>
+                </div>
+                <table id="teamLeaveCalendarTable" class="m-card-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Person</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colspan="4">No upcoming team leave.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel leadership-only">
+              <h3>Leave Approvals <span id="pendingApprovalCount" class="mini-meta"></span></h3>
+              <table id="leaveApprovalTable" class="m-card-table">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Type</th>
+                    <th>Dates</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                    <th>Decision</th>
+                  </tr>
+                </thead>
+                <tbody id="leaveApprovalTableBody"></tbody>
+              </table>
+              <button id="leaveApprovalToggle" class="ghost small hidden" type="button">Show all history</button>
+              <p id="leaveApprovalNotice" class="status hidden"></p>
+            </div>
+
+            <div class="panel leadership-only" id="reporteeLeaveSnapshotPanel">
+              <h3>Reportee Leave Balances</h3>
+              <table id="reporteeLeaveSnapshotTable" class="m-card-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>PL Rem.</th>
+                    <th>CL Rem.</th>
+                    <th>SL Rem.</th>
+                    <th>Total Taken</th>
+                    <th>Total Rem.</th>
+                    <th>Next Leave</th>
+                  </tr>
+                </thead>
+                <tbody id="reporteeLeaveSnapshotBody">
+                  <tr><td colspan="7">Loading reportee balances...</td></tr>
+                </tbody>
+              </table>
+              <button id="seeAllLeavesBtn" class="ghost small" type="button">See all employees</button>
+            </div>
+
+            <div class="panel">
+              <h3>Leave Year Archive</h3>
+              <table id="leaveArchiveTable" class="m-card-table">
+                <thead>
+                  <tr>
+                    <th>Cycle</th>
+                    <th>PL Remaining</th>
+                    <th>CL Remaining</th>
+                    <th>SL Remaining</th>
+                    <th>Archived On</th>
+                  </tr>
+                </thead>
+                <tbody id="leaveArchiveBody">
+                  <tr>
+                    <td colspan="5">No archived leave cycles yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel hidden" id="fractionalLeaveNotice">
+            <h3>Leave/Holiday Access Hidden</h3>
+            <p>This employee is marked as <strong>fractional</strong>, so leave tracker and holiday list are not visible in employee mode.</p>
+          </div>
+        </section>
+
+        <section id="leadership-planner" class="screen leadership-only">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Leadership View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Team Dashboard</h2>
+            <p>Resource allocation matrix — who's working on what, and who has capacity.</p>
+          </div>
+
+          <div class="panel">
+            <div class="toolbar planner-toolbar">
+              <div class="week-nav">
+                <button id="weekPrev" class="week-nav-btn" type="button" aria-label="Previous week">&lsaquo;</button>
+                <span id="weekLabel" class="week-nav-label">Week of ...</span>
+                <button id="weekNext" class="week-nav-btn" type="button" aria-label="Next week">&rsaquo;</button>
+                <select id="plannerMonth" class="week-nav-month">
+                  <option>Current month</option>
+                </select>
+              </div>
+              <input type="text" id="matrixSearch" class="matrix-search" placeholder="Search by name or team" autocomplete="off">
+            </div>
+            <p id="teamDashboardScopeNote" class="mini-meta">Loading team reporting scope...</p>
+
+            <div id="teamSummaryStrip" class="summary-strip"></div>
+
+            <div id="resourceMatrixWrap" class="matrix-wrap sticky-table-wrap">
+              <table id="resourceMatrix" class="matrix-table">
+                <thead id="matrixHead">
+                  <tr><th>Employee</th><th>Total</th><th>Free</th></tr>
+                </thead>
+                <tbody id="matrixBody">
+                  <tr><td colspan="3">No allocation data yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="client-projects" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Self View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Clients</h2>
+          </div>
+
+          <div class="panel">
+            <table id="clientRegistryTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Client Type</th>
+                  <th>Status</th>
+                  <th>Owner</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="portfolioTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <div class="client-form-inline">
+              <input id="newClientName" placeholder="Client name" />
+              <select id="newClientType">
+                <option value="retainer">Retainer</option>
+                <option value="project">Project</option>
+                <option value="pitch">Pitch</option>
+              </select>
+              <select id="newClientOwner">
+                <option value="">Owner</option>
+              </select>
+              <button id="addClientBtn" class="primary" type="button">Add</button>
+              <button id="cancelClientEditBtn" class="ghost hidden" type="button">Cancel</button>
+            </div>
+            <p id="clientFormNotice" class="mini-meta"></p>
+          </div>
+
+          <div class="panel leadership-only" id="archivedClientsPanel">
+            <h3>Archived Clients</h3>
+            <table id="archivedClientsTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Client Type</th>
+                  <th>Owner</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="archivedClientsBody"></tbody>
+            </table>
+          </div>
+
+          <!-- Client Detail View (hidden by default) -->
+          <div id="clientDetailView" class="hidden">
+            <button id="clientDetailBack" class="ghost small" type="button">&lsaquo; Back to Clients</button>
+            <div class="panel" id="clientDetailHeader">
+              <h3 id="clientDetailName"></h3>
+              <div class="profile-util-boxes" id="clientDetailMeta"></div>
+            </div>
+
+            <div class="panel">
+              <h3>Team Allocations (This Week)</h3>
+              <table class="m-card-table">
+                <thead><tr><th>Person</th><th>Allocation %</th><th>Hours</th></tr></thead>
+                <tbody id="clientDetailAllocBody"></tbody>
+              </table>
+            </div>
+            <div class="panel">
+              <h3>Active Tasks</h3>
+              <table class="m-card-table">
+                <thead><tr><th>Person</th><th>Task</th><th>Status</th><th>Priority</th></tr></thead>
+                <tbody id="clientDetailTaskBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="client-analytics" class="screen">
+          <div class="screen-head">
+            <div class="analytics-header-row">
+              <h2 id="analyticsClientName">Analytics</h2>
+              <div id="analyticsUploadInline" class="analytics-header-upload" style="display:none;">
+                <span id="analyticsDetectedType" class="analytics-detected-label" style="display:none;"></span>
+                <label for="analyticsFileInput" class="analytics-upload-label">📊 Upload</label>
+                <input type="file" id="analyticsFileInput" accept=".xls,.xlsx,.csv" hidden>
+                <span id="analyticsClientMeta" class="analytics-meta-sub"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Inner tabs: Overview | Audience Intelligence | Post Performance -->
+          <div class="analytics-inner-tabs" id="analyticsInnerTabs">
+            <button class="analytics-inner-tab active" data-analytics-tab="overview" type="button">Overview</button>
+            <button class="analytics-inner-tab" data-analytics-tab="audience" type="button">Audience Intelligence</button>
+            <button class="analytics-inner-tab" data-analytics-tab="posts" type="button">Post Performance</button>
+          </div>
+
+          <div class="analytics-tab-panel active" id="analyticsTabOverview"></div>
+          <div class="analytics-tab-panel" id="analyticsTabAudience"></div>
+          <div class="analytics-tab-panel" id="analyticsTabPosts"></div>
+        </section>
+
+        <section id="people-directory" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Self View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Employee Directory</h2>
+            <p>All employees can view directory details. Only leadership/admin can edit records.</p>
+          </div>
+
+          <div id="orgChartPanel" class="panel hidden">
+            <div class="editor-bar">
+              <h3>Org Chart</h3>
+              <p id="orgChartScope" class="mini-meta">Reporting structure based on leadership mapping.</p>
+            </div>
+            <div id="orgChartCanvas" class="org-chart-canvas"></div>
+          </div>
+
+          <div class="panel">
+            <div class="toolbar">
+              <input type="search" id="directorySearch" class="matrix-search" placeholder="Search people" autocomplete="off" />
+              <span style="flex:1"></span>
+              <button id="toggleOrgChartBtn" class="ghost" type="button">Org Chart</button>
+            </div>
+            <table id="peopleDirectoryTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Department</th>
+                  <th>Reports To</th>
+                  <th>Employment Type</th>
+                  <th>Access Role</th>
+                  <th>Current Utilization</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="peopleDirectoryBody">
+                <tr>
+                  <td colspan="8">No employees yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <details id="deactivatedEmployeesPanel" class="panel hidden leadership-only">
+            <summary><h3 style="display:inline">Deactivated Employees</h3></summary>
+            <table class="m-card-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Department</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="deactivatedEmployeesBody"></tbody>
+            </table>
+          </details>
+        </section>
+
+        <section id="employee-profile" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow" id="profileEyebrow">Self View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2 id="profileMainHeading">My Profile</h2>
+            <p>Manage your details and utilization. Leadership/admin can inspect and update any employee profile.</p>
+            <p class="profile-meta-pills" id="profileMetaLine"></p>
+          </div>
+
+          <div id="profileStatCards" class="profile-stats"></div>
+          <p id="profileLeaveSummaryNotice" class="mini-meta leadership-only"></p>
+
+          <div class="panel">
+            <div class="editor-bar">
+              <h3>Projects for Selected Period</h3>
+              <label class="inline-filter">Period
+                <select id="profilePeriod">
+                  <option value="week" selected>Week</option>
+                  <option value="month">Month</option>
+                </select>
+              </label>
+              <label class="inline-filter" id="profileWeekFilterWrap">Week #
+                <select id="profileWeekFilter">
+                  <option value="">Current week</option>
+                </select>
+              </label>
+              <p id="profilePeriodMeta" class="mini-meta">Select a period to view allocation details.</p>
+            </div>
+            <table id="profileAllocTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Allocation</th>
+                  <th>Period Reference</th>
+                </tr>
+              </thead>
+              <tbody id="profileProjectsBody"></tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h3>Daily Task List (Today)</h3>
+            <table id="profileTaskTable" class="m-card-table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Client</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="profileDailyTasksBody">
+                <tr>
+                  <td colspan="3">No tasks yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Invoice upload (own profile, non-finance only) -->
+          <div class="panel collapsible-panel collapsed" id="profileInvoicePanel" style="display:none;">
+            <button class="collapsible-toggle" type="button" aria-expanded="false">
+              <span class="collapsible-icon">&#9654;</span>
+              <h3>Submit Invoice / Reimbursement</h3>
+            </button>
+            <div class="collapsible-content">
+              <div class="profile-invoice-row">
+                <label class="invoice-file-btn" id="profileInvoiceDropzone">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  <span id="profileInvoiceFileLabel">Choose file</span>
+                  <input type="file" id="profileInvoiceFileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" hidden>
+                </label>
+                <select id="profileInvoiceType">
+                  <option value="invoice">Invoice</option>
+                  <option value="reimbursement">Reimbursement</option>
+                </select>
+                <input type="month" id="profileInvoiceMonth">
+                <button id="profileInvoiceUploadBtn" class="primary" type="button" disabled>Upload</button>
+                <div id="profileInvoiceStatus" class="mini-meta"></div>
+              </div>
+              <p id="profileInvoiceNotice" class="mini-meta"></p>
+              <div id="profileInvoiceHistory"></div>
+            </div>
+          </div>
+
+          <div class="panel collapsible-panel collapsed" id="profileWorkPanel">
+            <button class="collapsible-toggle" type="button" aria-expanded="false">
+              <span class="collapsible-icon">&#9654;</span>
+              <h3>Edit Profile</h3>
+            </button>
+            <div class="collapsible-content">
+              <div class="profile-grid">
+                <div>
+                  <label>Full Name
+                    <input id="profileNameInput" value="" maxlength="25" />
+                  </label>
+                  <label>Email
+                    <input id="profileEmailInput" value="" readonly />
+                  </label>
+                  <label>Department / Team
+                    <select id="profileTeamSelect">
+                      <option selected>AM</option>
+                      <option>Leadership</option>
+                      <option>Art</option>
+                      <option>Copy</option>
+                      <option>Video</option>
+                      <option>Strategy</option>
+                    </select>
+                  </label>
+                  <label>Employment Type
+                    <select id="profileEmploymentType">
+                      <option value="full-time" selected>Full-time</option>
+                      <option value="fractional">Fractional</option>
+                    </select>
+                  </label>
+                  <label>Birthday
+                    <input id="profileBirthday" type="date" value="" />
+                  </label>
+                  <label>City
+                    <input id="profileCity" placeholder="e.g. Mumbai" value="" />
+                  </label>
+                  <label class="leadership-only hidden">Reports To
+                    <select id="profileManagerSelect">
+                      <option value="">— Auto (by team) —</option>
+                    </select>
+                  </label>
+                  <label class="leadership-only hidden">Access Role
+                    <select id="profileAccessLevel">
+                      <option value="employee" selected>Employee</option>
+                      <option value="leadership">Leadership</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </label>
+                  <label>Capacity %
+                    <input id="profileCapacityInput" value="100" />
+                  </label>
+                </div>
+
+                <div id="personalDataBlock">
+                  <label>Address
+                    <textarea id="profileAddress" rows="3"></textarea>
+                  </label>
+                  <label>Emergency Contact
+                    <input id="profileEmergencyContact" value="" />
+                  </label>
+                  <label>Notes
+                    <textarea id="profileNotes" rows="3" placeholder="Optional notes"></textarea>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="editor-bar profile-save-row">
+            <p id="profileSaveNotice" class="mini-meta">Update fields and click save.</p>
+            <button id="saveProfileBtn" class="primary" type="button">Save Profile</button>
+          </div>
+        </section>
+
+        <section id="admin-settings" class="screen leadership-only">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Leadership View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Admin &amp; Leadership Settings</h2>
+            <p>Manage access levels, policy guardrails, and operational defaults.</p>
+          </div>
+
+          <div class="panel">
+            <div>
+              <h3>Full Access Users (Leadership/Admin)</h3>
+              <table id="adminAccessTable" class="m-card-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Access</th>
+                  </tr>
+                </thead>
+                <tbody id="fullAccessTableBody">
+                  <tr>
+                    <td colspan="4">No full-access users configured.</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div class="editor-bar action-row">
+                <button id="saveAccessRolesBtn" class="primary" type="button">Save Roles</button>
+              </div>
+
+              <p id="fullAccessNotice" class="mini-meta"></p>
+            </div>
+          </div>
+
+        </section>
+
+        <section id="feature-requests" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Community</p>
+            </div>
+            <h2>Bugs & Features</h2>
+            <p>Report bugs or suggest features. Track what's been requested, what's in progress, and what's shipped.</p>
+          </div>
+
+          <div class="panel">
+            <h3>Submit</h3>
+            <div class="editor-bar action-row">
+              <select id="newFeatureRequestType">
+                <option value="feature">Feature</option>
+                <option value="bug">Bug</option>
+              </select>
+              <textarea id="newFeatureRequestInput" rows="2" placeholder="Describe the bug or feature idea..."></textarea>
+              <input id="newFeatureRequestLinks" type="text" placeholder="Paste link (Drive, screenshot, etc.) — optional" class="fr-links-input">
+              <div class="fr-submit-row">
+                <label class="fr-attach-label">
+                  <input type="file" id="newFeatureRequestFiles" accept="image/*" multiple hidden>
+                  <span class="ghost small fr-attach-btn">&#x1F4CE; Attach</span>
+                </label>
+                <button id="submitFeatureRequestBtn" class="primary" type="button">Submit</button>
+              </div>
+            </div>
+            <div id="frPendingFiles" class="fr-pending-files"></div>
+            <p id="featureRequestNotice" class="mini-meta"></p>
+          </div>
+
+          <div class="panel">
+            <div id="featureRequestThread" class="fr-thread"></div>
+          </div>
+
+          <div class="panel">
+            <h3 id="frCompletedHeading">Completed & Live</h3>
+            <div id="frCompletedList" class="fr-completed-list">
+              <p class="mini-meta">No completed requests yet.</p>
+            </div>
+          </div>
+
+          <div class="panel" id="frArchivedPanel" style="display:none;">
+            <details class="fr-archived-details">
+              <summary><h3 style="display:inline;cursor:pointer;">Archived Requests</h3></summary>
+              <div id="frArchivedList" class="fr-completed-list" style="margin-top:8px;"></div>
+            </details>
+          </div>
+        </section>
+
+        <!-- ── Invoice Center (viewer-only) ── -->
+        <section id="invoice-center" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Finance</p>
+            </div>
+            <h2>Invoice Center</h2>
+            <p>Track monthly invoice submissions across the team.</p>
+          </div>
+
+          <div class="panel" style="max-width:700px;">
+            <div class="invoice-month-row">
+              <label for="invoiceFilterMonth">Month</label>
+              <input type="month" id="invoiceFilterMonth">
+            </div>
+            <div id="invoiceTeamChecklist"></div>
+          </div>
+        </section>
+
+        <!-- ── Deal Flow / BD Pipeline ── -->
+        <section id="bd-pipeline" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Business Development</p>
+            </div>
+            <div class="deal-flow-header-row">
+              <div style="display:flex;align-items:center;gap:12px">
+                <h2>Deal Flow</h2>
+                <select class="deal-company-select" id="dealCompanySelect">
+                  <option value="Your Agency">Your Agency</option>
+                  <option value="Brand 2">Brand 2</option>
+                  <option value="Brand 3">Brand 3</option>
+                </select>
+              </div>
+              <div class="deal-flow-header-actions">
+                <div class="deal-flow-view-toggle">
+                  <button class="ghost small active" id="dealViewBoard" type="button">Board</button>
+                  <button class="ghost small" id="dealViewList" type="button">List</button>
+                </div>
+                <button class="primary small" id="dealAddBtn" type="button">+ New Deal</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Summary stats -->
+          <div class="deal-stats-bar" id="dealStatsBar"></div>
+
+          <!-- Filter bar -->
+          <div class="deal-filters" id="dealFilters">
+            <select id="dealFilterPoc"><option value="">All POCs</option></select>
+            <input type="text" id="dealSearchInput" placeholder="Search deals…" class="deal-search" />
+          </div>
+
+          <!-- Board view -->
+          <div class="deal-board" id="dealBoard"></div>
+
+          <!-- List view -->
+          <div class="deal-list-wrap" id="dealListWrap" style="display:none;">
+            <table class="deal-list-table">
+              <thead id="dealListHead"></thead>
+              <tbody id="dealListBody"></tbody>
+            </table>
+          </div>
+
+          <!-- Active / Cold / Completed table (non-board sections) -->
+          <div class="deal-section-table-wrap" id="dealSectionTableWrap" style="display:none;">
+            <table class="deal-list-table">
+              <thead id="dealSectionHead"></thead>
+              <tbody id="dealSectionBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer class="footer-note">
+          <span>Colony v2.1 &#127912; Holi Edition &copy; 2026</span>
+          <a href="#feature-requests" class="footer-link" id="featureRequestsFooterLink">Bugs & Features</a>
+        </footer>
+      </main>
+    </div>
+
+    <!-- Mobile bottom tab bar (visible < 768px) -->
+    <nav id="mobileTabBar" class="mobile-tab-bar" aria-label="Mobile navigation">
+      <!-- Tabs injected by renderMobileTabBar() -->
+    </nav>
+
+    <!-- "More" slide-up sheet -->
+    <div id="moreSheetBackdrop" class="more-sheet-backdrop" hidden></div>
+    <div id="moreSheet" class="more-sheet" hidden>
+      <div class="more-sheet-handle"></div>
+      <div id="moreSheetList" class="more-sheet-list">
+        <!-- Links injected by renderMoreSheet() -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Deal detail slide-over panel -->
+  <div class="deal-detail-panel" id="dealDetailPanel">
+    <div class="deal-detail-inner" id="dealDetailInner"></div>
+  </div>
+
+  <script src="vendor/supabase.js"></script>
+  <script src="vendor/xlsx.js"></script>
+  <script src="vendor/chart.js"></script>
+  <script src="app.js?v=20260324b"></script>
+</body>
+</html>
