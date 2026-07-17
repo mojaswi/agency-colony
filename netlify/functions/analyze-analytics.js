@@ -1,7 +1,9 @@
 const Anthropic = require('@anthropic-ai/sdk');
 
+const { getSupabaseAdmin } = require('./lib/supabase-admin');
+
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': process.env.APP_BASE_URL || 'https://colony.youragency.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
@@ -20,13 +22,31 @@ exports.handler = async (event) => {
     };
   }
 
-  // Verify auth — require Supabase access token
+  // Verify auth — validate Supabase access token against the auth server
   const authHeader = event.headers.authorization || '';
   if (!authHeader.startsWith('Bearer ')) {
     return {
       statusCode: 401,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Unauthorized' }),
+    };
+  }
+  const token = authHeader.slice(7);
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !user) {
+      return {
+        statusCode: 401,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Invalid or expired token' }),
+      };
+    }
+  } catch (authEx) {
+    return {
+      statusCode: 401,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Auth verification failed' }),
     };
   }
 
@@ -60,7 +80,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const validAnalysisTypes = ['monthly', 'weekly', 'post', 'brand-signal'];
+  const validAnalysisTypes = ['monthly', 'weekly', 'post', 'brand-signal', 'instagram', 'community_pulse'];
   if (!validAnalysisTypes.includes(analysisType)) {
     return {
       statusCode: 400,
@@ -120,7 +140,7 @@ exports.handler = async (event) => {
 };
 
 // --- System prompt ---
-const SYSTEM_PROMPT = `You are a senior LinkedIn strategist at your agency, a digital marketing agency. You're writing internal performance notes for the account management team.
+const SYSTEM_PROMPT = `You are a senior social media strategist (LinkedIn and Instagram) at Your Agency, a digital marketing agency. You're writing internal performance notes for the account management team.
 
 Rules:
 • Be specific — always cite actual numbers, percentages, and deltas. Never say "impressions increased" without saying by how much.
@@ -148,11 +168,187 @@ function buildPrompt(type, data, clientName, viewMode, benchmarks) {
   if (type === 'brand-signal') {
     return buildBrandSignalPrompt(data, client);
   }
+  if (type === 'instagram') {
+    return buildInstagramPrompt(data, client);
+  }
+  if (type === 'community_pulse') {
+    return buildCommunityPulsePrompt(data, client);
+  }
 
   return `Analyze this LinkedIn data for ${client}:\n${JSON.stringify(data).substring(0, 3000)}`;
 }
 
-function buildMonthlyPrompt(data, client, channel) {
+function buildCommunityPulsePrompt(data, client) {
+  const sends = Array.isArray(data?.sends) ? data.sends : [];
+  const s = data?.summary || {};
+  const demo = data?.demographics || {};
+  if (!sends.length) return `No community sends data available for ${client}.`;
+
+  const pct = (f) => `${((f || 0) * 100).toFixed(1)}%`;
+  const table = sends.map(r =>
+    `${r.date}  |  ${r.send_type}  |  "${r.name}"  |  delivered ${(r.delivered || 0).toLocaleString()}  |  open ${pct(r.open_rate)}  |  click ${pct(r.click_rate)}  |  unsubs ${r.unsubscribed || 0}  |  bounced ${r.hard_bounce || 0}`
+  ).join('\n');
+
+  const byType = Object.entries(s.by_type || {}).map(([t, v]) =>
+    `${t}: ${v.sends} sends, open ${pct(v.open_rate)}, click ${pct(v.click_rate)}`
+  ).join(' | ');
+
+  const seg = (label, list) => (Array.isArray(list) && list.length)
+    ? `${label}: ${list.slice(0, 8).map(x => `${x.name} (${x.count})`).join(', ')}\n` : '';
+  const growth = (demo.subscribers?.growth_by_month || []).slice(-8).map(g => `${g.month}: +${g.count}`).join('  ');
+
+  return `Community pulse analysis for ${client} — their newsletter, dispatches, surveys, and community forum.
+
+This is a MOVEMENT-BUILDING organization, not a brand. Analyze through a movement lens:
+opens are ATTENTION; clicks, survey responses, forum joins, and opportunity uptake are PARTICIPATION.
+A movement's health is measured by participation and belonging, not reach.
+
+SUMMARY: ${s.total_sends || sends.length} sends, ${s.date_from || '?'} – ${s.date_to || '?'} | overall open ${pct(s.open_rate)}, click ${pct(s.click_rate)} | ${(s.subscribers || 0).toLocaleString()} subscribers | ${(s.forum_members || 0).toLocaleString()} forum members
+BY SEND TYPE: ${byType}
+
+SENDS (oldest to newest):
+${table}
+
+${growth ? `SUBSCRIBER GROWTH BY MONTH: ${growth}\n` : ''}${seg('Subscriber regions', demo.subscribers?.by_region)}${seg('Forum domains of work', demo.forum?.by_domain)}${seg('Forum regions', demo.forum?.by_region)}
+Provide:
+
+1. Participation Pulse
+Beyond opens, where is the community actually ACTING? Compare send types — which formats convert attention into participation (clicks, survey responses)? Cite the specific sends and rates.
+
+2. Community Health
+Is the base growing, engaged, and diverse (regions, domains of work)? What do unsubscribe patterns say about list quality vs churn?
+
+3. What the Network Wants
+From which sends drew action, infer what this community values (opportunities, resources, gatherings, stories). Be specific about the evidence.
+
+4. Recommendations
+2-3 concrete moves for the next month of sends — send type mix, cadence, content focus. Reference actual numbers.`;
+}
+
+function buildInstagramPrompt(data, client) {
+  const posts = Array.isArray(data?.posts) ? data.posts : [];
+  const s = data?.summary || {};
+  const dailyMetrics = Array.isArray(data?.dailyMetrics) ? data.dailyMetrics : [];
+
+  // Daily account metrics from the Insights CSV uploads (follows/views/…)
+  let metricsSection = '';
+  if (dailyMetrics.length) {
+    const keys = [...new Set(dailyMetrics.flatMap(r => Object.keys(r)))].filter(k => k !== 'date').sort();
+    const rows = dailyMetrics.map(r => `${r.date}  |  ${keys.map(k => `${k}: ${r[k] === undefined ? '-' : r[k]}`).join('  |  ')}`).join('\n');
+    metricsSection = `
+
+DAILY ACCOUNT METRICS (${dailyMetrics.length} days: ${keys.join(', ')}):
+${rows}
+
+For the daily metrics: identify the trend, name spike days with their values, and connect spikes to specific posts where the dates line up. A '-' means that metric wasn't uploaded for that day — treat it as missing, not zero.`;
+  }
+
+  if (!posts.length && dailyMetrics.length) {
+    return `Instagram account-trends analysis for ${client}. No post-level export has been uploaded yet — analyze the account metrics only.
+${metricsSection}
+
+Provide:
+
+1. Trend Read
+What's the overall trajectory of each metric? Cite actual numbers and dates.
+
+2. Spike Days
+Which days spiked and by how much vs the baseline? What might have driven them?
+
+3. Recommendations
+2-3 concrete moves. Also note that uploading the post-level export (Meta Business Suite posts CSV/XLSX) would let this analysis connect spikes to specific posts.`;
+  }
+  if (!posts.length) return `No Instagram post data available for ${client}.`;
+
+  const table = posts.map(p =>
+    `${p.date || '?'}  |  ${(p.views || 0).toLocaleString()} views  |  reach ${(p.reach || 0).toLocaleString()}  |  ${p.likes || 0} likes  |  ${p.comments || 0} comments  |  ${p.saves || 0} saves  |  ${p.shares || 0} shares  |  ${p.follows || 0} follows  |  ${p.type || 'post'}${p.durationSec ? ` (${p.durationSec}s)` : ''}  |  "${p.description || ''}"`
+  ).join('\n');
+
+  const summaryLine = `Account: ${s.account_name || client}${s.account_username ? ` (@${s.account_username})` : ''} | Period: ${s.date_from || '?'} – ${s.date_to || '?'} | ${s.total_posts || posts.length} posts | ${(s.total_views || 0).toLocaleString()} views | ${(s.total_likes || 0).toLocaleString()} likes | ${(s.total_comments || 0).toLocaleString()} comments | ${(s.total_saves || 0).toLocaleString()} saves | ${(s.total_shares || 0).toLocaleString()} shares | ${s.total_follows || 0} follows | avg engagement ${s.avg_engagement || '?'}%`;
+
+  return `Instagram performance analysis for ${client}.
+
+SUMMARY: ${summaryLine}
+
+POSTS (top ${posts.length} by views):
+${table}
+${metricsSection}
+DATA CAVEAT: Meta's exports often zero-fill fields they didn't capture (reach, follows, saves can be 0 on rows with high views). Treat suspiciously uniform zeros as MISSING data, not as literal performance — never diagnose "no reach despite views" from zero-filled fields. Base conclusions on fields that vary across rows.
+
+Analyze the full post set. Provide:
+
+1. What's Working
+Which posts, formats (reel vs static vs carousel), lengths, topics, and hooks over-perform? Cite the specific posts and numbers. Saves and shares signal deeper resonance than likes — weight them accordingly.
+
+2. What's Not
+Which content consistently under-performs, and what do those posts have in common?
+
+3. Follower Conversion
+Which posts actually drove follows? Reach without follows is rented attention — call out the difference.
+
+4. Recommendations
+2-3 concrete content moves for next month based on the patterns above (topic, format, length, hook style). Reference actual posts as evidence.`;
+}
+
+// Full report-context blocks for the analysis prompts. The analyses should
+// read EVERYTHING the uploaded reports can say: every post with full metrics,
+// follower gains + demographics, visitor trends. Aggregate totals alone
+// misdiagnose content-mix swings — a recruitment-post reach spike ending
+// reads as "reach collapsed" (real case: Northwind Nonprofit, Jun 2026).
+function postsSection(posts, label) {
+  if (!Array.isArray(posts) || !posts.length) return '';
+  const rows = posts.map(p =>
+    `${p.date || '?'}  |  ${(p.impressions || 0).toLocaleString()} impr  |  ${p.clicks || 0} clicks  |  ${p.reactions || 0} reactions  |  ${p.comments || 0} comments  |  ${p.reposts || 0} reposts  |  ${p.type || 'post'}  |  "${p.title || ''}"`
+  ).join('\n');
+  return `
+
+${label || 'ALL POSTS in this window'} (by impressions):
+${rows}
+
+Before diagnosing any sharp reach swing, check the post list: distinguish a content-mix effect ending (e.g. hiring/recruitment or announcement posts routinely out-reach normal content on LinkedIn) from a genuine distribution problem, and name the specific posts responsible. If a spike was driven by one or two outlier posts, state what the baseline looks like excluding them. Also look for content patterns: which topics, hooks, or formats consistently over- or under-perform.`;
+}
+
+function segLine(label, list) {
+  if (!Array.isArray(list) || !list.length) return '';
+  return `${label}: ${list.map(s => `${s.name} (${s.count})`).join(', ')}\n`;
+}
+
+function followersSection(followers) {
+  if (!followers) return '';
+  const daily = (followers.daily || []).map(d => `${d.date}: +${d.gained}`).join('  ');
+  const demo = followers.demographics;
+  const demoText = demo
+    ? segLine('Top job functions', demo.jobFunctions) + segLine('Top industries', demo.industries) + segLine('Seniority', demo.seniority) + segLine('Locations', demo.locations) + segLine('Company size', demo.companySize)
+    : '';
+  return `
+
+FOLLOWERS in this window: +${followers.gainedInWindow || 0} total
+${daily ? `Daily gains: ${daily}` : ''}
+${demoText ? `Follower base demographics:\n${demoText}` : ''}
+Cross-reference: did follower gains track the reach spikes, and are the gains landing in the client's target segments?`;
+}
+
+function visitorsSection(visitors) {
+  if (!visitors) return '';
+  const daily = (visitors.daily || []).map(d => `${d.date}: ${d.unique}u/${d.views}v`).join('  ');
+  const demo = visitors.demographics;
+  const demoText = demo
+    ? segLine('Visitor job functions', demo.jobFunctions) + segLine('Visitor industries', demo.industries) + segLine('Visitor seniority', demo.seniority)
+    : '';
+  return `
+
+PAGE VISITORS in this window: ${visitors.uniqueVisitorsInWindow || 0} unique
+${daily ? `Daily (unique/views): ${daily}` : ''}
+${demoText || ''}`;
+}
+
+function contextSections(rawData) {
+  if (Array.isArray(rawData) || !rawData) return '';
+  return postsSection(rawData.recentPosts || rawData.posts) + followersSection(rawData.followers) + visitorsSection(rawData.visitors);
+}
+
+function buildMonthlyPrompt(rawData, client, channel) {
+  const data = Array.isArray(rawData) ? rawData : (rawData?.months || []);
   // Only analyze last 3 months (with 1 prior month for context)
   const allMonths = data.slice(-4);
   const months = data.slice(-3);
@@ -184,7 +380,7 @@ function buildMonthlyPrompt(data, client, channel) {
 Start your response with "Analysis for ${firstMonth} – ${lastMonth}".
 
 DATA (${allMonths.length} months, oldest to newest):
-${table}
+${table}${contextSections(rawData)}
 
 Analyze the last 3 months. Provide:
 
@@ -192,13 +388,14 @@ Analyze the last 3 months. Provide:
 What's the trajectory over these 3 months? Is ${channel.toLowerCase()} reach growing, flat, or declining? How is engagement trending relative to impressions?
 
 2. Standout Months
-Which of the 3 months was best and worst? What might explain the difference?
+Which of the 3 months was best and worst? What might explain the difference? Use the post list to attribute spikes or dips to specific content where the data supports it.
 
 3. Recommendations
 2-3 specific things the AM team should do next month. Be concrete (e.g., "Increase posting frequency from 2x to 3x/week since October's 3-post weeks averaged 40% higher impressions" — not "post more").`;
 }
 
-function buildWeeklyPrompt(data, client, channel) {
+function buildWeeklyPrompt(rawData, client, channel) {
+  const data = Array.isArray(rawData) ? rawData : (rawData?.weeks || []);
   // Only analyze last 4 weeks (with 1 prior week for context)
   const allWeeks = data.slice(-5);
   const weeks = data.slice(-4);
@@ -239,7 +436,7 @@ Start your response with "Analysis for ${firstWeek} – ${lastWeek}".
 
 DATA (${allWeeks.length} weeks, oldest to newest):
 ${table}
-${momentum ? `LATEST MOMENTUM: ${momentum}` : ''}
+${momentum ? `LATEST MOMENTUM: ${momentum}` : ''}${contextSections(rawData)}
 
 Analyze the last 4 weeks. Provide:
 
@@ -247,7 +444,7 @@ Analyze the last 4 weeks. Provide:
 How did the most recent week perform? Is it continuing a trend or an outlier?
 
 2. Patterns
-Any consistent patterns across the 4 weeks — is there a trend in engagement vs reach?
+Any consistent patterns across the 4 weeks — is there a trend in engagement vs reach? Use the post list to attribute reach spikes or dips to specific content where the data supports it.
 
 3. Recommendations
 2-3 specific tactical moves for next week. Reference actual numbers from the data.`;
@@ -330,6 +527,10 @@ function buildBrandSignalPrompt(data, client) {
       contentBlock += `\n• Week-over-week engagement change: ${wow.engagementDelta > 0 ? '+' : ''}${(wow.engagementDelta * 100).toFixed(2)}pp`;
     }
     sections.push(contentBlock);
+  }
+
+  if (Array.isArray(data?.recentPostsDetail) && data.recentPostsDetail.length) {
+    sections.push(postsSection(data.recentPostsDetail, 'POSTS in this window').trim());
   }
 
   if (followerSummary) {

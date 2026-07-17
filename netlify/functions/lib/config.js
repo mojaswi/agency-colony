@@ -16,7 +16,7 @@ function getConfig() {
     supabaseUrl,
     supabaseServiceRoleKey,
     resendApiKey: process.env.RESEND_API_KEY || '',
-    emailSender: process.env.EMAIL_SENDER || 'noreply@youragency.com',
+    emailSender: process.env.EMAIL_SENDER || 'user@youragency.com',
     appBaseUrl: process.env.APP_BASE_URL || 'https://colony.youragency.com'
   };
 }

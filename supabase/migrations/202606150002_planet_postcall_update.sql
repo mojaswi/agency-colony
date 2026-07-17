@@ -1,0 +1,16 @@
+-- ============================================================
+-- NO-OP (intentional). Created in error, then voided 15 Jun 2026.
+--
+-- This file was originally a deal-data update for Planet Material Labs
+-- after the 15 Jun discovery call. Per standing rule (PROJECT_MEMORY_AND_
+-- WORKING_STATE.md, Rule 2 as of 15 Jun 2026 evening), deal-data updates
+-- are NOT to live in `migrations/`. They are applied directly to the live
+-- database via Supabase CLI or PostgREST. Migrations are reserved for
+-- code/schema changes only.
+--
+-- The Planet Material Labs row update has been applied directly to the
+-- live `app.deals` table; nothing to do here.
+--
+-- Keeping the file (per user preference: never delete files) but it does
+-- nothing.
+-- ============================================================

@@ -1,6 +1,6 @@
 const { getSupabaseAdmin } = require('./lib/supabase-admin');
 const { sendEmail } = require('./lib/email');
-const { logNotification } = require('./lib/notifications');
+const { logNotification, withCronHeartbeat } = require('./lib/notifications');
 const { formatDateInIST, formatDateTimeInIST, getConfig } = require('./lib/config');
 
 function escapeHtml(value) {
@@ -22,7 +22,17 @@ function toDateRange(startDate, endDate) {
   return start === end ? start : `${start} to ${end}`;
 }
 
-exports.handler = async () => {
+const run = async (event) => {
+  // Allow only Netlify-scheduler invocations. Scheduled functions ARE invoked
+  // via HTTP POST under the hood, so checking event.httpMethod alone rejected
+  // the scheduler itself (all crons silently dead 13 Apr - 10 Jun 2026). Only
+  // the scheduler payload carries next_run.
+  let isScheduled = false;
+  try { isScheduled = Boolean(JSON.parse(event.body || '{}').next_run); } catch (e) { isScheduled = false; }
+  if (!isScheduled) {
+    return { statusCode: 403, body: JSON.stringify({ error: 'Scheduled function only' }) };
+  }
+
   const runAt = new Date();
   const runLabel = formatDateTimeInIST(runAt);
   const { appBaseUrl } = getConfig();
@@ -71,6 +81,32 @@ exports.handler = async () => {
   }
 
   // Skip email notifications on weekends (IST = UTC+5:30) — data operations above still run
+  // Spawn recurring monthly tasks BEFORE the weekend skip — a rule's day can
+  // land on a Saturday/Sunday and must still fire. Title-key dedupe vs any
+  // non-archived task already on today.
+  try {
+    const istNow = new Date(runAt.getTime() + 5.5 * 60 * 60 * 1000);
+    const todayIso = istNow.toISOString().slice(0, 10);
+    const lastDay = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth() + 1, 0)).getUTCDate();
+    const rulesRes = await supabase.from('recurring_tasks').select('*').eq('is_active', true);
+    const due = (rulesRes.data || []).filter((r) => istNow.getUTCDate() === Math.min(r.day_of_month, lastDay));
+    if (due.length) {
+      const existingRes = await supabase.from('daily_tasks').select('employee_id, task_title')
+        .eq('task_date', todayIso).neq('status', 'archived').limit(3000);
+      const seen = new Set((existingRes.data || []).map((t) => `${t.employee_id}|${String(t.task_title).toLowerCase().trim()}`));
+      const inserts = due
+        .filter((r) => !seen.has(`${r.employee_id}|${String(r.task_title).toLowerCase().trim()}`))
+        .map((r) => ({ employee_id: r.employee_id, task_date: todayIso, task_title: r.task_title, notes: r.notes, description: r.description, status: 'in_progress', sort_order: 0, recurring_task_id: r.id }));
+      if (inserts.length) {
+        const ins = await supabase.from('daily_tasks').insert(inserts);
+        if (ins.error) summary.errors.push(`Recurring spawn: ${ins.error.message}`);
+        else summary.recurringSpawned = inserts.length;
+      }
+    }
+  } catch (error) {
+    summary.errors.push(`Recurring spawn failed: ${error.message}`);
+  }
+
   const istDay = new Date(runAt.getTime() + 5.5 * 60 * 60 * 1000).getDay();
   if (istDay === 0 || istDay === 6) {
     summary.skippedWeekend = true;
@@ -96,50 +132,8 @@ exports.handler = async () => {
 
   const activeEmployees = activeEmployeesResponse.data || [];
 
-  for (const employee of activeEmployees) {
-    const subject = 'Daily tasklist reminder (10:00 AM IST)';
-    const html = `
-      <div style="font-family:Arial,sans-serif;line-height:1.5">
-        <p>Hello ${escapeHtml(employee.full_name || 'there')},</p>
-        <p>This is your daily Agency Colony tasklist reminder for ${escapeHtml(formatDateInIST(runAt))}.</p>
-        <p>Please submit/update today's tasks before end-of-day.</p>
-        <p>Open app: <a href="${appBaseUrl}">${appBaseUrl}</a></p>
-      </div>
-    `;
-
-    const text = [
-      `Hello ${employee.full_name || 'there'},`,
-      `This is your daily Agency Colony tasklist reminder for ${formatDateInIST(runAt)}.`,
-      "Please submit/update today's tasks before end-of-day.",
-      `Open app: ${appBaseUrl}`
-    ].join('\n');
-
-    try {
-      const emailResult = await sendEmail({
-        to: employee.email,
-        subject,
-        html,
-        text
-      });
-
-      await logNotification({
-        kind: 'daily_tasklist_reminder',
-        recipientEmail: employee.email,
-        subject,
-        payload: {
-          employee_id: employee.id,
-          sent_for_date: formatDateInIST(runAt)
-        },
-        status: emailResult.skipped ? 'skipped' : 'sent'
-      });
-
-      if (!emailResult.skipped) {
-        summary.dailyTasklistRemindersSent += 1;
-      }
-    } catch (error) {
-      summary.errors.push(`Daily reminder failed for ${employee.email}: ${error.message}`);
-    }
-  }
+  // (The daily tasklist reminder moved to task-nudge.js — 11:00 IST, only
+  // for people who have not touched their tasks that day.)
 
   // Birthday notifications to leadership
   const todayMonth = runAt.getMonth() + 1;
@@ -153,10 +147,10 @@ exports.handler = async () => {
   if (birthdayEmployees.length) {
     const leadershipEmails = [
       'admin@youragency.com',
-      'leader1@youragency.com',
-      'leader2@youragency.com',
-      'leader3@youragency.com',
-      'leader4@youragency.com'
+      'strategy-lead@youragency.com',
+      'creative-lead@youragency.com',
+      'am-lead@youragency.com',
+      'ops-lead@youragency.com'
     ];
 
     const names = birthdayEmployees.map((emp) => emp.full_name).filter(Boolean);
@@ -332,3 +326,5 @@ exports.handler = async () => {
     body: JSON.stringify(summary)
   };
 };
+
+exports.handler = withCronHeartbeat('daily-reminders', run);

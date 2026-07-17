@@ -59,7 +59,7 @@ select e.id,
   'Can we add a timesheet to feed in actual hours spent on each client during the day? The goal is to check how accurate our weekly allocation is to the actual hours we are spending on a task.',
   'requested',
   '2026-03-02T06:05:33Z'
-from app.employees e where lower(e.email) = 'user4@youragency.com'
+from app.employees e where lower(e.email) = 'am2@youragency.com'
 on conflict do nothing;
 
 insert into app.feature_requests (employee_id, request_text, status, created_at)
@@ -67,7 +67,7 @@ select e.id,
   'Instead of "team leaves for the next 30 days", we should do Q1, Q2, Q3, and Q4 — which will help everyone plan their leaves and lives!',
   'requested',
   '2026-03-02T07:42:32Z'
-from app.employees e where lower(e.email) = 'user3@youragency.com'
+from app.employees e where lower(e.email) = 'copy3@youragency.com'
 on conflict do nothing;
 
 insert into app.feature_requests (employee_id, request_text, status, created_at)
@@ -75,5 +75,5 @@ select e.id,
   'Daily tasks — do we get to carry forward to next day if it''s still a pending task?',
   'requested',
   '2026-03-02T12:42:15Z'
-from app.employees e where lower(e.email) = 'user6@youragency.com'
+from app.employees e where lower(e.email) = 'copy2@youragency.com'
 on conflict do nothing;

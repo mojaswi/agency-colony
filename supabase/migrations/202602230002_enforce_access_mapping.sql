@@ -8,9 +8,9 @@ stable
 as $$
   select case lower(coalesce(input_email, ''))
     when 'admin@youragency.com' then 'admin'::app.access_level
-    when 'leader1@youragency.com' then 'leadership'::app.access_level
-    when 'leader2@youragency.com' then 'leadership'::app.access_level
-    when 'leader3@youragency.com' then 'leadership'::app.access_level
+    when 'strategy-lead@youragency.com' then 'leadership'::app.access_level
+    when 'creative-lead@youragency.com' then 'leadership'::app.access_level
+    when 'am-lead@youragency.com' then 'leadership'::app.access_level
     else null
   end;
 $$;
@@ -58,7 +58,7 @@ insert into app.employees (
 )
 select
   'admin@youragency.com'::citext,
-  'Admin User',
+  'Alex Founder',
   ld.id,
   'full-time',
   'admin',

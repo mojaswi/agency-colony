@@ -1,10 +1,13 @@
 const { getSupabaseAdmin } = require('./lib/supabase-admin');
 const { sendEmail } = require('./lib/email');
-const { logNotification } = require('./lib/notifications');
+const { logNotification, withCronHeartbeat } = require('./lib/notifications');
 const { formatDateInIST, formatDateTimeInIST, getConfig } = require('./lib/config');
 
 // Employees excluded from invoice uploads
 const INVOICE_EXCLUDED_EMAILS = ['admin@youragency.com'];
+
+// Employees who still upload invoices but don't receive reminder emails
+const INVOICE_REMINDER_SKIP_EMAILS = ['ops-lead@youragency.com', 'finance@youragency.com', 'am-lead@youragency.com'];
 
 // Email to notify when all invoices are received
 const INVOICE_COMPLETION_EMAIL = 'finance@youragency.com';
@@ -18,7 +21,17 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-exports.handler = async () => {
+const run = async (event) => {
+  // Allow only Netlify-scheduler invocations. Scheduled functions ARE invoked
+  // via HTTP POST under the hood, so checking event.httpMethod alone rejected
+  // the scheduler itself (all crons silently dead 13 Apr - 10 Jun 2026). Only
+  // the scheduler payload carries next_run.
+  let isScheduled = false;
+  try { isScheduled = Boolean(JSON.parse(event.body || '{}').next_run); } catch (e) { isScheduled = false; }
+  if (!isScheduled) {
+    return { statusCode: 403, body: JSON.stringify({ error: 'Scheduled function only' }) };
+  }
+
   const runAt = new Date();
   const runLabel = formatDateTimeInIST(runAt);
   const { appBaseUrl } = getConfig();
@@ -91,7 +104,7 @@ exports.handler = async () => {
   // Find employees who still need to upload
   const pendingEmployees = employees.filter(e => !uploadedEmployeeIds.has(e.id));
 
-  // If all invoices received, notify finance admin (only once — check notification log)
+  // If all invoices received, notify finance (only once — check notification log)
   if (pendingEmployees.length === 0) {
     summary.allInvoicesReceived = true;
 
@@ -109,14 +122,14 @@ exports.handler = async () => {
       const subject = `All invoices received — ${monthLabel}`;
       const html = `
         <div style="font-family:Arial,sans-serif;line-height:1.5">
-          <p>Hi Finance Admin,</p>
+          <p>Hi finance,</p>
           <p>All team invoices for <strong>${escapeHtml(monthLabel)}</strong> have been uploaded.</p>
           <p>${employees.length} employee${employees.length !== 1 ? 's' : ''} submitted their invoices.</p>
           <p><a href="${appBaseUrl}#invoice-center">View in Invoice Center</a></p>
         </div>
       `;
       const text = [
-        'Hi Finance Admin,',
+        'Hi finance,',
         `All team invoices for ${monthLabel} have been uploaded.`,
         `${employees.length} employees submitted their invoices.`,
         `View: ${appBaseUrl}#invoice-center`
@@ -147,8 +160,9 @@ exports.handler = async () => {
     };
   }
 
-  // Send reminders to employees who haven't uploaded yet
+  // Send reminders to employees who haven't uploaded yet (skip silenced ones)
   for (const employee of pendingEmployees) {
+    if (INVOICE_REMINDER_SKIP_EMAILS.includes((employee.email || '').toLowerCase().trim())) continue;
     const subject = `Invoice reminder — ${monthLabel}`;
     const html = `
       <div style="font-family:Arial,sans-serif;line-height:1.5">
@@ -198,3 +212,5 @@ exports.handler = async () => {
     body: JSON.stringify(summary)
   };
 };
+
+exports.handler = withCronHeartbeat('invoice-reminder', run);

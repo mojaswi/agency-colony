@@ -33,6 +33,8 @@ async function sendEmail({ to, subject, html, text }) {
     throw new Error('EMAIL_SENDER is missing or invalid.');
   }
 
+  const fromHeader = `Your Agency Colony <${emailSender}>`;
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -45,7 +47,7 @@ async function sendEmail({ to, subject, html, text }) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: emailSender,
+        from: fromHeader,
         to: recipients,
         subject,
         html,

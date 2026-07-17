@@ -53,6 +53,10 @@ exports.handler = async (event) => {
     return jsonResponse(400, { error: 'actorName must be a string (max 255 chars).' });
   }
 
+  if (payload.replyText !== undefined && (typeof payload.replyText !== 'string' || payload.replyText.length > 4000)) {
+    return jsonResponse(400, { error: 'replyText must be a string (max 4000 chars).' });
+  }
+
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (typeof featureRequestId !== 'string' || !UUID_RE.test(featureRequestId)) {
     return jsonResponse(400, { error: 'featureRequestId must be a valid UUID.' });
@@ -109,17 +113,18 @@ exports.handler = async (event) => {
     : fr.request_text;
   const typeLabel = fr.request_type === 'bug' ? 'bug report' : 'feature request';
 
-  // --- New bug → notify admin@youragency.com ---
+  // --- New post (bug or feature) → notify admin@youragency.com ---
   if (type === 'new_bug') {
     const adminEmail = 'admin@youragency.com';
-    const subject = `🐛 New bug reported by ${actor}`;
-    const bodyLine = `<p>${escapeHtml(actor)} reported a new bug on Colony:</p>`;
+    const isBug = fr.request_type === 'bug';
+    const subject = isBug ? `🐛 New bug reported by ${actor}` : `💡 New feature request from ${actor}`;
+    const bodyLine = `<p>${escapeHtml(actor)} posted a new ${escapeHtml(typeLabel)} on Colony:</p>`;
 
     const html = `
       <div style="font-family:Arial,sans-serif;line-height:1.5">
-        <p>Hey Admin,</p>
+        <p>Hey the superadmin,</p>
         ${bodyLine}
-        <blockquote style="border-left:3px solid #e74c3c;margin:8px 0;padding:4px 12px;color:#555">${escapeHtml(snippet)}</blockquote>
+        <blockquote style="border-left:3px solid ${isBug ? '#e74c3c' : '#b8a04a'};margin:8px 0;padding:4px 12px;color:#555">${escapeHtml(snippet)}</blockquote>
         <p>View it on Colony: <a href="${appBaseUrl}#feature-requests">${appBaseUrl}#feature-requests</a></p>
       </div>
     `;
@@ -166,11 +171,19 @@ exports.handler = async (event) => {
     notifKind = 'feature_request_status';
   }
 
+  // Include the comment itself for replies — "someone commented" without the
+  // comment forces a login just to find out what was said.
+  const replyText = type === 'reply' ? String(payload.replyText || '').trim() : '';
+  const replyHtml = replyText
+    ? `<div style="background:#faf7f0;border-radius:8px;padding:12px 14px;margin:8px 0 12px;color:#403f3a">${escapeHtml(replyText)}</div>`
+    : '';
+
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5">
       <p>Hello ${escapeHtml(ownerName)},</p>
       ${bodyLine}
       <blockquote style="border-left:3px solid #ccc;margin:8px 0;padding:4px 12px;color:#555">${escapeHtml(snippet)}</blockquote>
+      ${replyHtml}
       <p>View it on Colony: <a href="${appBaseUrl}#feature-requests">${appBaseUrl}#feature-requests</a></p>
     </div>
   `;
@@ -181,6 +194,7 @@ exports.handler = async (event) => {
     type === 'upvote' ? `${actor} upvoted your ${typeLabel}:` :
     `Your ${typeLabel} status was changed:`,
     `"${snippet}"`,
+    ...(replyText ? ['', replyText] : []),
     `View it on Colony: ${appBaseUrl}#feature-requests`
   ].join('\n');
 

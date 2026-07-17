@@ -13,7 +13,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20260324b" />
+  <link rel="stylesheet" href="styles.css?v=20260409a" />
+  <!-- Quill.js rich text editor for policy documents -->
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
 </head>
 <body>
   <!-- Splash screen — covers everything until auth resolves -->
@@ -31,6 +33,11 @@
       </a>
       <div class="header-center"></div>
       <div class="header-right">
+        <button id="notifyBellBtn" class="theme-toggle-btn" type="button" aria-label="Notifications" style="position:relative;">🔔<span id="notifyBadge" class="notify-badge hidden"></span></button>
+        <div id="notifyPanel" class="notify-panel hidden">
+          <div class="notify-panel-head">Needs your action</div>
+          <div id="notifyPanelList"></div>
+        </div>
         <button id="themeToggleBtn" class="theme-toggle-btn" type="button" aria-label="Toggle dark mode">
           <svg class="theme-icon theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="theme-icon theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -45,12 +52,13 @@
           <button id="loginNavButton" class="screen-link active sidebar-item" data-screen="login" data-role="all">Login</button>
           <div class="sidebar-nav-separator" aria-hidden="true"></div>
           <button class="screen-link sidebar-item" data-screen="home-feed" data-role="all">Home</button>
+          <button class="screen-link sidebar-item leadership-only" data-screen="executive-dashboard" data-role="leadership">Agency Overview</button>
           <button class="screen-link sidebar-item hidden" data-screen="bd-pipeline" data-role="all" id="dealFlowNavButton">Deal Flow</button>
-          <button class="screen-link sidebar-item leadership-only" data-screen="leadership-planner" data-role="leadership">Team Dashboard</button>
-          <button class="screen-link sidebar-item" data-screen="daily-tasklist" data-role="all">Work Planner</button>
-          <button class="screen-link sidebar-item" data-screen="my-allocations" data-role="all">Weekly Allocation</button>
-          <button class="screen-link sidebar-item" data-screen="leave-center" data-role="all" id="leaveNavButton">Leave Center</button>
-          <button class="screen-link sidebar-item" data-screen="people-directory" data-role="all">People</button>
+          <button class="screen-link sidebar-item leadership-only" data-screen="leadership-planner" data-role="leadership">Resource Planner</button>
+          <button class="screen-link sidebar-item" data-screen="daily-tasklist" data-role="all">My Work</button>
+          <button class="screen-link sidebar-item" data-screen="my-allocations" data-role="all">My Allocation</button>
+          <button class="screen-link sidebar-item" data-screen="leave-center" data-role="all" id="leaveNavButton">My Leave</button>
+          <button class="screen-link sidebar-item" data-screen="people-directory" data-role="all">Team Directory</button>
           <button class="screen-link sidebar-item" data-screen="client-projects" data-role="all">Clients</button>
           <button class="screen-link sidebar-item hidden" data-screen="invoice-center" data-role="all" id="invoiceNavButton">Invoices</button>
           <button class="screen-link sidebar-item superadmin-only" data-screen="admin-settings" data-role="admin">Admin Settings</button>
@@ -85,11 +93,10 @@
         </section>
 
         <section id="home-feed" class="screen">
-          <div class="screen-head">
+          <div class="screen-head screen-head-tight">
             <div class="screen-head-top">
               <p class="eyebrow" id="homeGreeting">Overview</p>
             </div>
-            <p class="mini-meta" id="homeTagline">What's happening at your agency?</p>
           </div>
           <div id="homeStatCards" class="home-stats"></div>
           <div id="homeBirthdayPanel" class="birthday-panel hidden"></div>
@@ -107,7 +114,7 @@
                 <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
               </div>
             </div>
-            <h2>Work Planner</h2>
+            <h2>My Work</h2>
             <p>Plan your week and track daily progress. Move tasks to Today when ready to work on them.</p>
           </div>
 
@@ -162,14 +169,30 @@
               <select id="newTaskClientSelect">
                 <option value="">Select client</option>
               </select>
-              <input id="newTaskDescriptionInput" type="text" placeholder="Description (optional)" maxlength="50" />
+              <input id="newTaskDescriptionInput" type="text" placeholder="Description / link (optional)" title="Paste a URL — it becomes a clickable link on the task" maxlength="200" />
+              <select id="newTaskRepeatSelect" title="Repeat" aria-label="Repeat">
+                <option value="">One-time</option>
+                <option value="monthly">↻ Monthly</option>
+              </select>
+              <select id="newTaskRepeatDay" class="hidden" aria-label="Day of month"></select>
               <input id="newTaskDeadlineInput" type="date" class="hidden" />
               <button id="addWeeklyTaskBtn" class="primary" type="button">Add</button>
             </div>
+            <details class="fr-archived-details" id="recurringTasksDetails">
+              <summary><span style="cursor:pointer;">↻ Repeating tasks (<span id="recurringCount">0</span>)</span></summary>
+              <div id="recurringTasksList" style="margin-top:8px;"><p class="mini-meta">None yet — pick "↻ Monthly" when adding a task.</p></div>
+            </details>
           </div>
 
           <div class="panel">
-            <h3>Task Archive</h3>
+            <div class="archive-month-nav">
+              <h3>Task Archive</h3>
+              <div class="archive-month-controls">
+                <button id="archiveMonthPrev" class="week-nav-btn" type="button" aria-label="Previous month">&lsaquo;</button>
+                <span id="archiveMonthLabel" class="week-nav-label"></span>
+                <button id="archiveMonthNext" class="week-nav-btn" type="button" aria-label="Next month">&rsaquo;</button>
+              </div>
+            </div>
             <div class="archive-layout">
               <div class="archive-calendar-col">
                 <div id="taskArchiveCalendar" class="archive-grid"></div>
@@ -204,8 +227,8 @@
                 <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
               </div>
             </div>
-            <h2>Weekly Allocation</h2>
-            <p>Keep weekly distribution current. Employees update on Monday; leadership can adjust throughout the week.</p>
+            <h2>My Allocation</h2>
+            <p>Keep weekly distribution current so the team knows who's working on what.</p>
           </div>
 
           <div class="panel">
@@ -240,18 +263,31 @@
                 </tr>
               </thead>
               <tbody></tbody>
+              <tfoot>
+                <tr>
+                  <td></td>
+                  <td><p id="allocSummary" class="status alloc-total">0%</p></td>
+                  <td colspan="3"></td>
+                </tr>
+              </tfoot>
             </table>
 
             <div class="alloc-footer">
-              <p id="allocSummary" class="status alloc-total">Total allocation: 0%</p>
               <div class="alloc-footer-actions">
                 <button id="addRow" class="ghost" type="button">Add</button>
-                <button id="saveAllocationsBtn" class="primary" type="button">Save Weekly Allocation</button>
+                <button id="suggestFromTasksBtn" class="ghost" type="button">✦ Suggest from tasks</button>
+                <button id="copyLastWeekBtn" class="ghost" type="button">← Copy from last week</button>
+                <button id="saveAllocationsBtn" class="primary" type="button">Save Allocation</button>
               </div>
             </div>
 
             <p id="allocEditPolicyNote" class="mini-meta"></p>
             <p id="allocWeekNote" class="mini-meta"></p>
+          </div>
+
+          <div class="panel">
+            <h3>Allocation Archive</h3>
+            <div id="allocArchiveContainer"></div>
           </div>
 
           <div class="panel leadership-only">
@@ -271,7 +307,7 @@
                 <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
               </div>
             </div>
-            <h2>Leave Center</h2>
+            <h2>My Leave</h2>
             <p>Submit requests, track status, and manage approvals through a policy-compliant workflow.</p>
             <div id="onLeaveTodayBadge" class="leadership-only hidden" style="margin-top:8px">
               <span class="chip info" id="onLeaveTodayCount">No one on leave today</span>
@@ -321,6 +357,10 @@
                     <input id="leaveEnd" type="date" />
                   </label>
                 </div>
+                <label class="leave-halfday-label" style="display:flex;align-items:center;gap:8px;">
+                  <input id="leaveHalfDay" type="checkbox" style="width:auto;" />
+                  <span>Half day (single-day requests — counts as 0.5)</span>
+                </label>
                 <label>Reason
                   <textarea id="leaveReason" rows="2" placeholder="Short reason"></textarea>
                 </label>
@@ -450,7 +490,7 @@
                 <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
               </div>
             </div>
-            <h2>Team Dashboard</h2>
+            <h2>Resource Planner</h2>
             <p>Resource allocation matrix — who's working on what, and who has capacity.</p>
           </div>
 
@@ -464,22 +504,18 @@
                   <option>Current month</option>
                 </select>
               </div>
-              <input type="text" id="matrixSearch" class="matrix-search" placeholder="Search by name or team" autocomplete="off">
+              <div class="planner-right-controls">
+                <div class="planner-view-toggle" id="plannerViewToggle">
+                  <button class="pvt-btn active" data-view="people" type="button">People</button>
+                  <button class="pvt-btn" data-view="clients" type="button">Clients</button>
+                </div>
+                <input type="text" id="matrixSearch" class="matrix-search" placeholder="Search by name or team" autocomplete="off">
+              </div>
             </div>
             <p id="teamDashboardScopeNote" class="mini-meta">Loading team reporting scope...</p>
 
-            <div id="teamSummaryStrip" class="summary-strip"></div>
-
-            <div id="resourceMatrixWrap" class="matrix-wrap sticky-table-wrap">
-              <table id="resourceMatrix" class="matrix-table">
-                <thead id="matrixHead">
-                  <tr><th>Employee</th><th>Total</th><th>Free</th></tr>
-                </thead>
-                <tbody id="matrixBody">
-                  <tr><td colspan="3">No allocation data yet.</td></tr>
-                </tbody>
-              </table>
-            </div>
+            <div id="plannerPeopleView" class="planner-view"></div>
+            <div id="plannerClientView" class="planner-view" style="display:none"></div>
           </div>
         </section>
 
@@ -550,6 +586,8 @@
               <div class="profile-util-boxes" id="clientDetailMeta"></div>
             </div>
 
+            <div class="panel" id="clientDetailEngagement"></div>
+
             <div class="panel">
               <h3>Team Allocations (This Week)</h3>
               <table class="m-card-table">
@@ -580,16 +618,90 @@
             </div>
           </div>
 
-          <!-- Inner tabs: Overview | Audience Intelligence | Post Performance -->
+          <!-- Inner tabs: one per PLATFORM (shown only when that platform has
+               data) + a cross-platform Overview. LinkedIn absorbs the old
+               Audience Intelligence / Post Performance tabs as sections. -->
           <div class="analytics-inner-tabs" id="analyticsInnerTabs">
             <button class="analytics-inner-tab active" data-analytics-tab="overview" type="button">Overview</button>
-            <button class="analytics-inner-tab" data-analytics-tab="audience" type="button">Audience Intelligence</button>
-            <button class="analytics-inner-tab" data-analytics-tab="posts" type="button">Post Performance</button>
+            <button class="analytics-inner-tab" data-analytics-tab="linkedin" type="button">LinkedIn</button>
+            <button class="analytics-inner-tab" data-analytics-tab="instagram" type="button">Instagram</button>
+            <button class="analytics-inner-tab" data-analytics-tab="community" type="button">Community Pulse</button>
           </div>
 
           <div class="analytics-tab-panel active" id="analyticsTabOverview"></div>
-          <div class="analytics-tab-panel" id="analyticsTabAudience"></div>
-          <div class="analytics-tab-panel" id="analyticsTabPosts"></div>
+          <div class="analytics-tab-panel" id="analyticsTabLinkedIn">
+            <div id="liOverviewSection"></div>
+            <div id="analyticsTabAudience"></div>
+            <div id="analyticsTabPosts"></div>
+          </div>
+          <div class="analytics-tab-panel" id="analyticsTabInstagram"></div>
+          <div class="analytics-tab-panel" id="analyticsTabCommunity"></div>
+        </section>
+
+        <section id="client-scope-coverage" class="screen scope-coverage-only">
+          <div class="sc-wrap">
+            <div class="sc-crumbs">
+              <a href="#" id="scBackToClients">Clients</a>
+              <span class="sc-crumb-sep">›</span>
+              <span id="scClientCrumb">—</span>
+              <button type="button" class="sc-btn sc-back-btn" id="scBackBtn">← Back</button>
+            </div>
+            <h1 class="sc-title">
+              <span id="scClientName">Loading…</span>
+              <span class="sc-tags" id="scClientTags"></span>
+            </h1>
+            <div class="sc-sub" id="scClientSub"></div>
+
+            <div class="sc-month-switcher">
+              <button type="button" class="sc-btn" id="scMonthPrev">←</button>
+              <div class="sc-month-label" id="scMonthLabel">April 2026</div>
+              <button type="button" class="sc-btn" id="scMonthNext">→</button>
+              <span class="sc-month-hint">Showing scope & allocations active in this month</span>
+            </div>
+
+            <div class="sc-summary">
+              <div class="sc-stat">
+                <div class="sc-stat-label">Scope Items</div>
+                <div class="sc-stat-val" id="scStatScopeCount">0</div>
+                <div class="sc-stat-delta" id="scStatScopeDelta">no scope yet</div>
+              </div>
+              <div class="sc-stat">
+                <div class="sc-stat-label">Team Allocated</div>
+                <div class="sc-stat-val" id="scStatTeamCount">0 people</div>
+                <div class="sc-stat-delta" id="scStatTeamDelta">0% of one FTE</div>
+              </div>
+              <div class="sc-stat">
+                <div class="sc-stat-label">Coverage</div>
+                <div class="sc-stat-val" id="scStatCoverage">—</div>
+                <div class="sc-stat-delta" id="scStatCoverageDelta">awaiting scope</div>
+              </div>
+            </div>
+
+            <div class="sc-gap-banner" id="scGapBanner" style="display:none;"></div>
+
+            <div class="sc-card">
+              <h3>
+                Scope of Work
+                <button class="sc-btn primary" type="button" id="scAddScopeBtn">+ Add scope item</button>
+              </h3>
+              <div id="scScopeList">
+                <div class="sc-empty">No scope items yet. Add the first deliverable from the contract.</div>
+              </div>
+            </div>
+
+            <div class="sc-card">
+              <h3>Standing Allocation</h3>
+              <div id="scAllocBody" class="sc-alloc-by-discipline"></div>
+              <div class="sc-available" id="scAvailableWrap">
+                <div class="sc-available-head">Available employees <span class="sc-available-hint">Click Assign to add to standing allocation</span></div>
+                <div id="scAvailableList" class="sc-available-list"></div>
+              </div>
+            </div>
+
+            <div class="sc-footer-meta">
+              Colony · Client View · Leadership only · Scope vs resourcing
+            </div>
+          </div>
         </section>
 
         <section id="people-directory" class="screen">
@@ -601,7 +713,7 @@
                 <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
               </div>
             </div>
-            <h2>Employee Directory</h2>
+            <h2>Team Directory</h2>
             <p>All employees can view directory details. Only leadership/admin can edit records.</p>
           </div>
 
@@ -641,7 +753,7 @@
           </div>
 
           <details id="deactivatedEmployeesPanel" class="panel hidden leadership-only">
-            <summary><h3 style="display:inline">Deactivated Employees</h3></summary>
+            <summary><h3 style="display:inline">Offboarded Employees</h3></summary>
             <table class="m-card-table">
               <thead>
                 <tr>
@@ -802,8 +914,11 @@
                   <label>Address
                     <textarea id="profileAddress" rows="3"></textarea>
                   </label>
-                  <label>Emergency Contact
-                    <input id="profileEmergencyContact" value="" />
+                  <label>Emergency Contact Name
+                    <input id="profileEmergencyName" value="" placeholder="Full name" />
+                  </label>
+                  <label>Emergency Contact Phone
+                    <input id="profileEmergencyPhone" type="tel" value="" placeholder="+91 XXXXX XXXXX" />
                   </label>
                   <label>Notes
                     <textarea id="profileNotes" rows="3" placeholder="Optional notes"></textarea>
@@ -859,6 +974,131 @@
             </div>
           </div>
 
+          <!-- Enforced Access (superadmin-only failsafe: pins emails to a role on login) -->
+          <div class="panel" id="accessOverridesPanel">
+            <div>
+              <h3>Enforced Access (failsafe)</h3>
+              <p class="mini-meta">These emails are pinned to a role on every login, overriding the DB. This is the safety net that keeps leadership/admin access stable. Superadmin-only. Removing a pin makes that person's role follow "Save Roles" above instead.</p>
+              <table class="m-card-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Pinned Role</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="accessOverridesTableBody">
+                  <tr><td colspan="3">Loading…</td></tr>
+                </tbody>
+              </table>
+
+              <div class="editor-bar action-row">
+                <input type="email" id="newOverrideEmail" placeholder="user@youragency.com" aria-label="Override email">
+                <select id="newOverrideRole" aria-label="Override role">
+                  <option value="leadership">Leadership</option>
+                  <option value="admin">Admin</option>
+                  <option value="employee">Employee</option>
+                </select>
+                <button id="addOverrideBtn" class="primary" type="button">Add / update pin</button>
+              </div>
+              <p id="accessOverridesNotice" class="mini-meta"></p>
+            </div>
+          </div>
+
+          <!-- Public Holidays (leadership-editable, used across leave/home/allocation) -->
+          <div class="panel" id="publicHolidaysPanel">
+            <div>
+              <h3>Public Holidays</h3>
+              <p class="mini-meta">Shown on Home, the Leave calendar, and allocation week math. The yearly list is a team decision — add the next year's dates after your team exercise.</p>
+              <table class="m-card-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Holiday</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="holidaysAdminTableBody">
+                  <tr><td colspan="3">Loading…</td></tr>
+                </tbody>
+              </table>
+
+              <div class="editor-bar action-row">
+                <input type="date" id="newHolidayDate" aria-label="Holiday date">
+                <input type="text" id="newHolidayName" placeholder="Holiday name" aria-label="Holiday name">
+                <button id="addHolidayBtn" class="primary" type="button">Add holiday</button>
+              </div>
+              <p id="holidaysAdminNotice" class="mini-meta"></p>
+            </div>
+          </div>
+
+          <!-- Operational Config (superadmin-only: visibility lists + approver/manager routing) -->
+          <div class="panel superadmin-only" id="appConfigPanel">
+            <div>
+              <h3>Operational Config</h3>
+              <p class="mini-meta">Visibility lists and approver/manager routing that used to be hardcoded. Superadmin-only. Each list/map falls back to a built-in default until you customise it; clearing the last entry restores that default. Changes take effect on each user's next page load.</p>
+              <div id="appConfigEditors"><p class="mini-meta">Loading…</p></div>
+              <p id="appConfigNotice" class="mini-meta"></p>
+            </div>
+          </div>
+
+          <!-- Scheduled Jobs Health (cron heartbeats) -->
+          <div class="panel" id="cronHealthPanel">
+            <div>
+              <h3>Scheduled Jobs Health</h3>
+              <p class="mini-meta">Every reminder cron writes a heartbeat after each run. If a job shows late/DEAD here, the scheduler is broken — emails are silently not going out.</p>
+              <table class="m-card-table">
+                <thead>
+                  <tr><th>Job</th><th>Last run</th><th>Status</th><th>Schedule</th></tr>
+                </thead>
+                <tbody id="cronHealthTableBody">
+                  <tr><td colspan="4">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Policy Documents Editor (admin only) -->
+          <div class="panel" id="policyDocumentsPanel" style="display:none;">
+            <div class="editor-bar">
+              <h3>Policy Documents</h3>
+              <p class="mini-meta">Edit company policies. All employees see the latest version via footer links.</p>
+            </div>
+            <div id="policyDocsList"></div>
+            <!-- Policy editor (hidden until a policy is selected) -->
+            <div id="policyEditorWrap" class="policy-editor-wrap" style="display:none;">
+              <div class="policy-editor-header">
+                <h4 id="policyEditorTitle"></h4>
+                <span class="mini-meta" id="policyEditorMeta"></span>
+              </div>
+              <div id="policyEditorToolbar"></div>
+              <div id="policyEditorContainer" class="policy-editor-container"></div>
+              <div class="editor-bar action-row" style="margin-top:12px;">
+                <button id="savePolicyBtn" class="primary" type="button">Save Policy</button>
+                <button id="cancelPolicyBtn" class="ghost" type="button">Cancel</button>
+                <button id="viewPolicyHistoryBtn" class="ghost" type="button">Version History</button>
+              </div>
+              <p id="policyEditorNotice" class="mini-meta"></p>
+            </div>
+            <!-- Policy version history modal -->
+            <div id="policyHistoryWrap" style="display:none;">
+              <div class="policy-editor-header">
+                <h4>Version History</h4>
+                <button id="closePolicyHistoryBtn" class="ghost small" type="button">Back to Editor</button>
+              </div>
+              <div id="policyHistoryList"></div>
+            </div>
+          </div>
+
+          <!-- Onboarding Templates (admin only) -->
+          <div class="panel" id="onboardingTemplatesPanel" style="display:none;">
+            <div class="editor-bar">
+              <h3>Onboarding Checklist</h3>
+              <p class="mini-meta">Default checklist items that get created for every new hire. Items are grouped by phase.</p>
+            </div>
+            <div id="onboardingTemplatesList"></div>
+          </div>
+
         </section>
 
         <section id="feature-requests" class="screen">
@@ -896,10 +1136,12 @@
           </div>
 
           <div class="panel">
-            <h3 id="frCompletedHeading">Completed & Live</h3>
-            <div id="frCompletedList" class="fr-completed-list">
-              <p class="mini-meta">No completed requests yet.</p>
-            </div>
+            <details class="fr-archived-details">
+              <summary><h3 id="frCompletedHeading" style="display:inline;cursor:pointer;">Completed &amp; Live</h3></summary>
+              <div id="frCompletedList" class="fr-completed-list" style="margin-top:8px;">
+                <p class="mini-meta">No completed requests yet.</p>
+              </div>
+            </details>
           </div>
 
           <div class="panel" id="frArchivedPanel" style="display:none;">
@@ -940,8 +1182,8 @@
                 <h2>Deal Flow</h2>
                 <select class="deal-company-select" id="dealCompanySelect">
                   <option value="Your Agency">Your Agency</option>
-                  <option value="Brand 2">Brand 2</option>
-                  <option value="Brand 3">Brand 3</option>
+                  <option value="Varta">Varta</option>
+                  <option value="Sample Client">Sample Client</option>
                 </select>
               </div>
               <div class="deal-flow-header-actions">
@@ -983,9 +1225,86 @@
           </div>
         </section>
 
+        <!-- ── Agency Overview ── -->
+        <section id="executive-dashboard" class="screen">
+          <div class="screen-head">
+            <div class="screen-head-top">
+              <p class="eyebrow">Leadership View</p>
+              <div class="screen-nav-arrows">
+                <button class="screen-arrow prev" type="button" aria-label="Previous screen">&lsaquo;</button>
+                <button class="screen-arrow next" type="button" aria-label="Next screen">&rsaquo;</button>
+              </div>
+            </div>
+            <h2>Agency Overview</h2>
+            <p>Agency state at a glance — team, pipeline, clients, and activity.</p>
+          </div>
+
+          <div class="kpi-grid" id="execKpiGrid"></div>
+
+          <div class="exec-duo" style="margin-top:var(--space-3)">
+            <div class="panel" id="execAllocCard">
+              <div class="exec-card-header">
+                <h3>Team Allocation</h3>
+                <div class="exec-alloc-legend" id="execAllocLegend">
+                  <span class="leg-green">&lt; 90%</span>
+                  <span class="leg-amber">90–100%</span>
+                  <span class="leg-red">&gt; 100%</span>
+                </div>
+              </div>
+              <div id="execAllocList"></div>
+              <button class="exec-show-all-btn" id="execAllocToggle" type="button" style="display:none"></button>
+            </div>
+            <div class="exec-duo-right">
+              <div class="panel" id="execWhosOutCard"></div>
+              <div class="panel" id="execOnboardingCard"></div>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top:var(--space-3)">
+            <div class="panel" id="execPipelineCard"></div>
+            <div class="panel" id="execActivityCard"></div>
+            <div class="panel" id="execClientsCard"></div>
+          </div>
+        </section>
+
+        <!-- Policy Page (full screen) -->
+        <section id="policy" class="screen">
+          <div class="policy-page">
+            <div class="policy-page-header">
+              <div>
+                <h1 id="policyPageTitle">Your Agency Remote Work Policy</h1>
+                <span class="policy-version-badge" id="policyPageVersion"></span>
+                <span class="mini-meta" id="policyPageUpdated"></span>
+              </div>
+              <button id="policyEditBtn" class="ghost" style="display:none;">Edit</button>
+            </div>
+            <div id="policyPageContent" class="policy-page-content"></div>
+            <!-- Edit mode (admin only) -->
+            <div id="policyPageEditorWrap" style="display:none;">
+              <div id="policyPageEditorToolbar"></div>
+              <div id="policyPageEditorContainer" class="policy-editor-container"></div>
+              <div class="editor-bar action-row" style="margin-top:12px;">
+                <button id="policyPageSaveBtn" class="primary" type="button">Save as New Version</button>
+                <button id="policyPageCancelBtn" class="ghost" type="button">Cancel</button>
+              </div>
+              <p id="policyPageEditorNotice" class="mini-meta"></p>
+            </div>
+            <!-- Version history (admin only) -->
+            <div id="policyVersionHistory" style="display:none;">
+              <h3>Version History</h3>
+              <p class="mini-meta">Only visible to you and the AM lead.</p>
+              <div id="policyVersionList"></div>
+            </div>
+          </div>
+        </section>
+
         <footer class="footer-note">
-          <span>Colony v2.1 &#127912; Holi Edition &copy; 2026</span>
-          <a href="#feature-requests" class="footer-link" id="featureRequestsFooterLink">Bugs & Features</a>
+          <span id="footerVersion">Colony</span>
+          <div class="footer-links">
+            <a href="#feature-requests" class="footer-link" id="featureRequestsFooterLink">Bugs & Features</a>
+            <span class="footer-sep">|</span>
+            <a href="#policy" class="footer-link" id="footerPolicyRemoteWork">Remote Work Policy</a>
+          </div>
         </footer>
       </main>
     </div>
@@ -1005,14 +1324,82 @@
     </div>
   </div>
 
+  <!-- Onboarding Welcome Overlay (full-screen, shown to new hires) -->
+  <div id="onboardingOverlay" class="onboarding-overlay" style="display:none;">
+    <div class="onboarding-overlay-inner">
+      <!-- Step 1: Welcome -->
+      <div class="onboarding-step" data-step="welcome">
+        <div class="onboarding-welcome-icon">&#127793;</div>
+        <h1 id="onboardingWelcomeName">Welcome to the Colony!</h1>
+        <p class="onboarding-intro">Colony is your daily tool for tasks, leave, allocations, and team coordination at Your Agency. Let's get you set up.</p>
+        <button class="primary onboarding-next-btn" data-goto="profile">Let's go</button>
+      </div>
+      <!-- Step 2: Profile -->
+      <div class="onboarding-step" data-step="profile" style="display:none;">
+        <h2>Complete Your Profile</h2>
+        <p class="onboarding-intro">Fill in these details so the team knows who you are.</p>
+        <div class="onboarding-form">
+          <label><span>Manager <span class="required">*</span></span>
+            <select id="onbProfileManager"><option value="">Select your manager</option></select>
+            <span class="mini-meta">If you're unsure, ask the AM lead at am-lead@youragency.com</span>
+          </label>
+          <label><span>Department <span class="required">*</span></span>
+            <select id="onbProfileDept"></select>
+          </label>
+          <label><span>City <span class="required">*</span></span>
+            <input type="text" id="onbProfileCity" placeholder="e.g. Mumbai, Delhi, Goa" />
+          </label>
+          <label><span>Birthday <span class="required">*</span></span>
+            <input type="date" id="onbProfileBirthday" />
+          </label>
+          <label><span>Emergency Contact Name <span class="required">*</span></span>
+            <input type="text" id="onbProfileEmergencyName" placeholder="Full name" />
+          </label>
+          <label><span>Emergency Contact Phone <span class="required">*</span></span>
+            <input type="tel" id="onbProfileEmergencyPhone" placeholder="+91 XXXXX XXXXX" />
+          </label>
+        </div>
+        <p id="onbProfileError" class="status error" style="display:none;"></p>
+        <button class="primary onboarding-next-btn" id="onbProfileSaveBtn">Save & Continue</button>
+      </div>
+      <!-- Step 3: Remote Working Policy (includes leave policy) -->
+      <div class="onboarding-step" data-step="policy-remote" style="display:none;">
+        <h2>Your Agency Remote Working Policy</h2>
+        <div class="onboarding-policy-content" id="onbPolicyRemoteContent"></div>
+        <p class="onboarding-policy-note">This policy is always available from the <strong>Remote Work Policy</strong> link in the footer once you're signed in.</p>
+        <button class="primary onboarding-next-btn" id="onbPolicyRemoteGotIt">I've read and understood this</button>
+      </div>
+      <!-- Step 4: All set -->
+      <div class="onboarding-step" data-step="done" style="display:none;">
+        <div class="onboarding-welcome-icon">&#127881;</div>
+        <h1>You're all set!</h1>
+        <p class="onboarding-intro">Welcome to Your Agency. Your manager and leadership team will guide you through the rest of your first week.</p>
+        <button class="primary onboarding-next-btn" id="onbDoneBtn">Enter Colony</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Policy full-page screen (inside app-shell, before closing) -->
+
   <!-- Deal detail slide-over panel -->
   <div class="deal-detail-panel" id="dealDetailPanel">
     <div class="deal-detail-inner" id="dealDetailInner"></div>
   </div>
 
-  <script src="vendor/supabase.js"></script>
-  <script src="vendor/xlsx.js"></script>
-  <script src="vendor/chart.js"></script>
-  <script src="app.js?v=20260324b"></script>
+  <script src="vendor/supabase.js?v=20260409a"></script>
+  <script src="vendor/xlsx.js?v=20260409a"></script>
+  <script src="vendor/chart.js?v=20260409a"></script>
+  <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+  <script src="version.js" onerror="window.COLONY_VERSION='dev'"></script>
+  <script src="js/config.js?v=20260409a"></script>
+  <script src="js/utils.js?v=20260409a"></script>
+  <script src="js/access.js?v=20260409a"></script>
+  <script src="js/tasks.js?v=20260409a"></script>
+  <script src="js/leave.js?v=20260409a"></script>
+  <script src="js/alloc.js?v=20260409a"></script>
+  <script src="js/notify.js?v=20260409a"></script>
+  <script src="js/analytics.js?v=20260409a"></script>
+  <script src="js/modal.js?v=20260409a"></script>
+  <script src="app.js?v=20260409a"></script>
 </body>
 </html>

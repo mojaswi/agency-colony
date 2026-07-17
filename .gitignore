@@ -7,6 +7,15 @@ node_modules/
 # Claude Code
 .claude/
 
+# Environment secrets
+.env
+.env.local
+.env.production
+
 # Misc
 deno.lock
 supabase/.temp/
+
+# Generated at build time
+.DS_Store
+scripts/sql.sh

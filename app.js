@@ -6,78 +6,10 @@ function dismissSplash() {
   el.addEventListener('transitionend', () => el.remove(), { once: true });
 }
 
-const DEFAULT_EMPLOYEE = 'My Profile';
-const WORK_HOURS_PER_WEEK = 45;
-const HOURS_PER_DAY = 9;
+// Constants live in js/config.js (loaded before this file).
 const employeeStore = {};
 
-const ENFORCED_ACCESS_BY_EMAIL = {
-  'admin@youragency.com': 'admin',
-  'leader1@youragency.com': 'leadership',
-  'leader2@youragency.com': 'leadership',
-  'leader3@youragency.com': 'leadership',
-  'leader4@youragency.com': 'leadership'
-};
-
-const SUPERADMIN_EMAIL = 'admin@youragency.com';
-const INVOICE_VIEWER_EMAILS = ['finance@youragency.com', 'leader3@youragency.com', 'admin@youragency.com'];
-const INVOICE_EXCLUDED_EMAILS = ['admin@youragency.com'];
-const DEAL_FLOW_EXTRA_EMAILS = ['sales@youragency.com']; // non-leadership users who can see Deal Flow
-const ANT_DOMAIN = '@youragency.com';
-const TEAM_AM = 'AM';
-const TEAM_AM_LEGACY = 'Acc Management'; // DB renamed to 'AM' — kept for backward compat during transition
-const TEAM_MANAGER_BY_TEAM = Object.freeze({
-  [TEAM_AM]: 'leader3@youragency.com',
-  Art: 'leader2@youragency.com',
-  Copy: 'leader2@youragency.com',
-  Video: 'leader2@youragency.com',
-  Strategy: 'leader1@youragency.com'
-});
-const DIRECT_MANAGER_BY_EMAIL = Object.freeze({
-  'leader2@youragency.com': SUPERADMIN_EMAIL,
-  'leader3@youragency.com': SUPERADMIN_EMAIL,
-  'leader1@youragency.com': SUPERADMIN_EMAIL,
-  'leader4@youragency.com': SUPERADMIN_EMAIL
-});
-const STATEFUL_SCREENS = [
-  'home-feed',
-  'leadership-planner',
-  'daily-tasklist',
-  'my-allocations',
-  'leave-center',
-  'people-directory',
-  'client-projects',
-  'employee-profile',
-  'admin-settings',
-  'invoice-center'
-];
-
-const PUBLIC_HOLIDAYS_2026 = [
-  { date: '2026-01-26', name: 'Republic Day' },
-  { date: '2026-02-15', name: 'Maha Shivratri' },
-  { date: '2026-03-04', name: 'Holi' },
-  { date: '2026-04-03', name: 'Good Friday' },
-  { date: '2026-05-01', name: 'Labor Day' },
-  { date: '2026-08-15', name: 'Independence Day' },
-  { date: '2026-09-14', name: 'Ganesh Chaturthi' },
-  { date: '2026-10-02', name: 'Gandhi Jayanti' },
-  { date: '2026-10-19', name: 'Durga Ashtami' },
-  { date: '2026-11-09', name: 'Diwali' },
-  { date: '2026-11-24', name: 'Guru Nanak Jayanti' },
-  { date: '2026-12-25', name: 'Christmas Break' }
-];
-
-const COLONY_UPDATES = [
-  { date: '2026-03-04', text: 'Personalized Home greeting by time of day' },
-  { date: '2026-03-04', text: 'Leave approvals: recent history with expandable view' },
-  { date: '2026-03-04', text: 'Reportee leave balances: total remaining, own team first' },
-  { date: '2026-03-04', text: 'People page: live utilization data' },
-  { date: '2026-03-04', text: 'Collapsible Edit Profile section' },
-  { date: '2026-03-03', text: 'Home dashboard with team stats and timeline' },
-  { date: '2026-03-03', text: 'Email notifications when someone comments/likes your request' },
-  { date: '2026-02-28', text: 'Bugs & Features board with upvotes, replies, and status tracking' },
-  { date: '2026-02-25', text: 'Daily task archive with calendar view' }
-];
+let COLONY_UPDATES = [];
 
 const state = {
   role: 'employee',
@@ -111,8 +43,67 @@ const state = {
   dealView: 'board',
   dealFilterPoc: '',
   dealSearch: '',
-  dealCompany: 'Your Agency'
+  dealCompany: 'Your Agency',
+  inactiveEmployees: [],
+  publicHolidays: null, // loaded from app.public_holidays; null = use PUBLIC_HOLIDAYS fallback
+  accessOverrides: null, // loaded from app.access_overrides; null/empty = use ENFORCED_ACCESS_BY_EMAIL fallback
+  appConfig: null, // loaded from app.app_config (key→value); per-key fallback to the config.js constants
+  homePulse: null, // home feed live signals: whosOut (RPC), doneTasks, dealMoves, myTasksDueToday
+  loadedAt: {} // loader freshness stamps (screen-switch cache; mutations call raw loaders which re-stamp)
 };
+
+// Holiday list: prefer the DB-managed list (editable in Admin Settings), fall
+// back to the in-code PUBLIC_HOLIDAYS constant if the table is empty/unreachable.
+function getPublicHolidays() {
+  return (state.publicHolidays && state.publicHolidays.length)
+    ? state.publicHolidays
+    : PUBLIC_HOLIDAYS;
+}
+
+async function loadPublicHolidaysFromSupabase() {
+  if (!state.supabase) return;
+  const { data, error } = await state.supabase
+    .from('public_holidays')
+    .select('holiday_date, name')
+    .order('holiday_date', { ascending: true });
+  if (error) { console.error('Public holidays load failed:', error); return; }
+  // Normalize to the shape every consumer expects: { date, name }.
+  state.publicHolidays = (data || []).map(r => ({ date: r.holiday_date, name: r.name }));
+}
+
+// Access overrides (the role failsafe, editable by superadmin in Admin Settings).
+// Loaded into a { email: role } map for drop-in compatibility with the old
+// hardcoded ENFORCED_ACCESS_BY_EMAIL constant; getEnforcedAccessMap() (access.js)
+// falls back to that constant if this is empty/unreachable. MUST be awaited
+// before getEnforcedAccessLevel() runs during login.
+async function loadAccessOverrides() {
+  if (!state.supabase) return;
+  const { data, error } = await state.supabase
+    .from('access_overrides')
+    .select('email, role');
+  if (error) { console.error('Access overrides load failed:', error); return; }
+  const map = {};
+  (data || []).forEach(r => { map[normalizeEmail(r.email)] = r.role; });
+  state.accessOverrides = map;
+}
+
+// Generic operational config (app.app_config, superadmin-editable). Loaded into
+// a { key: value } map; each get*() accessor falls back to the in-code constant
+// for that key if the table/key is missing. Awaited in applyAuthState before
+// visibility is computed.
+async function loadAppConfig() {
+  if (!state.supabase) return;
+  const { data, error } = await state.supabase
+    .from('app_config')
+    .select('key, value');
+  if (error) { console.error('App config load failed:', error); return; }
+  const map = {};
+  (data || []).forEach(r => { map[r.key] = r.value; });
+  state.appConfig = map;
+}
+
+// Config accessors (getConfigList/getConfigMap + the per-key getters) live in
+// js/access.js so they're testable and colocated with getEnforcedAccessMap.
 
 function makeEmptyEmployeeRecord(overrides = {}) {
   return {
@@ -137,132 +128,7 @@ function ensureEmployeeRecord(name) {
   return employeeStore[targetName];
 }
 
-function formatTimestamp(dateValue = new Date()) {
-  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = date.toLocaleString('en-US', { month: 'short' });
-  const year = date.getFullYear();
-  let hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const suffix = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12;
-  hours = hours === 0 ? 12 : hours;
-  return `${day} ${month} ${year}, ${String(hours).padStart(2, '0')}:${minutes} ${suffix}`;
-}
-
-function toISODateLocal(dateValue = new Date()) {
-  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatDateForLabel(dateValue) {
-  if (!dateValue) return '--';
-  return new Intl.DateTimeFormat('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric'
-  }).format(new Date(dateValue));
-}
-
-function parseIsoDateLocal(dateValue) {
-  const text = String(dateValue || '').trim();
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const [, yyyy, mm, dd] = match;
-  return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-}
-
-function isoWeekMetaFromDate(dateValue) {
-  const local = dateValue instanceof Date ? dateValue : new Date(dateValue);
-  if (Number.isNaN(local.getTime())) return { year: new Date().getFullYear(), week: 0 };
-  const utcDate = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()));
-  const day = utcDate.getUTCDay() || 7;
-  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
-  const isoYear = utcDate.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-  const isoWeek = Math.ceil(((utcDate - yearStart) / 86400000 + 1) / 7);
-  return { year: isoYear, week: isoWeek };
-}
-
-function weekIdentifierFromIsoDate(dateIso) {
-  const parsed = parseIsoDateLocal(dateIso);
-  if (!parsed) return '';
-  const meta = isoWeekMetaFromDate(parsed);
-  return `${meta.year}-W${String(meta.week).padStart(2, '0')}`;
-}
-
-function formatWeekIdentifierLabel(weekStartIso) {
-  return formatWeekRangeLabel(weekStartIso);
-}
-
-function formatPercent(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '0%';
-  const bounded = Math.max(0, Math.min(100, numeric));
-  const rounded = Math.round(bounded * 100) / 100;
-  const text = Number.isInteger(rounded)
-    ? String(rounded)
-    : rounded.toFixed(2).replace(/\.?0+$/, '');
-  return `${text}%`;
-}
-
-function formatPercentRaw(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '0%';
-  const rounded = Math.round(numeric * 100) / 100;
-  const text = Number.isInteger(rounded)
-    ? String(rounded)
-    : rounded.toFixed(2).replace(/\.?0+$/, '');
-  return `${text}%`;
-}
-
-function percentNumberFromText(value) {
-  const match = String(value || '').match(/-?\d+(\.\d+)?/);
-  if (!match) return 0;
-  const numeric = Number(match[0]);
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function escapeHtml(value) {
-  return String(value || '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function parseTimestamp(timestampText) {
-  if (!timestampText) return null;
-  const match = timestampText.match(/^(\d{2})\s([A-Za-z]{3})\s(\d{4}),\s(\d{2}):(\d{2})\s(AM|PM)$/);
-  if (!match) return null;
-
-  const [, dd, mon, yyyy, hh, mm, meridiem] = match;
-  const monthMap = {
-    Jan: 0,
-    Feb: 1,
-    Mar: 2,
-    Apr: 3,
-    May: 4,
-    Jun: 5,
-    Jul: 6,
-    Aug: 7,
-    Sep: 8,
-    Oct: 9,
-    Nov: 10,
-    Dec: 11
-  };
-  const month = monthMap[mon];
-  if (month === undefined) return null;
-
-  let hour = Number(hh);
-  if (meridiem === 'PM' && hour !== 12) hour += 12;
-  if (meridiem === 'AM' && hour === 12) hour = 0;
-  return new Date(Number(yyyy), month, Number(dd), hour, Number(mm), 0, 0);
-}
+// Pure date/format/string helpers live in js/utils.js (loaded before this file).
 
 function getStaleReferenceDate() {
   const dates = Object.values(employeeStore)
@@ -320,34 +186,8 @@ const navButtons = [...document.querySelectorAll('.screen-link')];
 const screens = [...document.querySelectorAll('.screen')];
 const loginNavButton = document.getElementById('loginNavButton') || navButtons.find((btn) => btn.dataset.screen === 'login') || null;
 
-function normalizeEmail(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-function isSuperadminEmail(email) {
-  return normalizeEmail(email) === SUPERADMIN_EMAIL;
-}
-
-function isSuperadminUser() {
-  const candidateEmail = state.employeeProfile?.email || state.session?.user?.email || '';
-  return isSuperadminEmail(candidateEmail);
-}
-
-function canManageAccessRoles() {
-  return isSuperadminUser();
-}
-
-function canEditEmployee(employee) {
-  if (!state.isAuthenticated) return false;
-  if (isSuperadminUser()) return true;
-  const empEmail = normalizeEmail(employee?.email || '');
-  const myEmail = normalizeEmail(state.employeeProfile?.email || state.session?.user?.email || '');
-  if (empEmail && empEmail === myEmail) return true;
-  if (isLeadershipRole() && employee) {
-    return employeeReportsToManager(employee, myEmail);
-  }
-  return false;
-}
+// Access-control predicates (isSuperadmin*, canManageAccessRoles, canEditEmployee,
+// isLeadership*, can*Clients, canManageTask*, etc.) live in js/access.js.
 
 function displayPersonName(value, fallback = 'Employee') {
   const tokens = String(value || '')
@@ -363,6 +203,7 @@ function normalizeTeamName(value, fallback = TEAM_AM) {
   const normalized = String(value || '').trim();
   if (!normalized) return fallback;
   if (normalized.toLowerCase() === TEAM_AM_LEGACY.toLowerCase()) return TEAM_AM;
+  if (normalized.toLowerCase() === 'leadership') return TEAM_AM;
   return normalized;
 }
 
@@ -372,10 +213,6 @@ function teamLookupCandidates(value) {
   return [normalized];
 }
 
-function getEnforcedAccessLevel(email) {
-  return ENFORCED_ACCESS_BY_EMAIL[normalizeEmail(email)] || null;
-}
-
 function setAuthenticatedNavigation(enabled) {
   navButtons.forEach((btn) => {
     if (!STATEFUL_SCREENS.includes(btn.dataset.screen)) return;
@@ -383,16 +220,12 @@ function setAuthenticatedNavigation(enabled) {
   });
 }
 
-function isLeadershipRole() {
-  return state.role === 'leadership' || state.role === 'admin';
-}
-
 function currentUserDepartmentName() {
   const fromProfile = normalizeTeamName(state.employeeProfile?.department?.name || '', '');
   if (fromProfile) return fromProfile;
 
   if (state.currentEmployeeId) {
-    const ownDirectoryRow = state.employeeDirectory.find((entry) => entry.id === state.currentEmployeeId);
+    const ownDirectoryRow = lookupActiveEmployee(state.currentEmployeeId);
     const fromDirectory = normalizeTeamName(ownDirectoryRow?.department?.name || '', '');
     if (fromDirectory) return fromDirectory;
   }
@@ -400,24 +233,100 @@ function currentUserDepartmentName() {
   return normalizeTeamName(selectedEmployeeRecord()?.team || '', '');
 }
 
-function isFinanceUser() {
-  return currentUserDepartmentName().toLowerCase() === 'finance';
+// ─── Display name normalization ─────────────────────────────────────
+// Strip middle names colony-wide. "Fame Middle Last" → "Fame Last".
+// Single-token names ("Cher") and two-token names ("a BD viewer") are kept as-is.
+function shortDisplayName(fullName) {
+  if (!fullName || typeof fullName !== 'string') return fullName || '';
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return parts.join(' ');
+  return parts[0] + ' ' + parts[parts.length - 1];
+}
+function stripMiddleNameOnEmployee(employee) {
+  if (!employee) return employee;
+  const short = shortDisplayName(employee.full_name);
+  if (short !== employee.full_name) {
+    return { ...employee, full_name: short, _original_full_name: employee.full_name };
+  }
+  return employee;
+}
+if (typeof window !== 'undefined') {
+  window.shortDisplayName = shortDisplayName;
 }
 
-function isInvoiceViewer() {
-  const email = normalizeEmail(state.session?.user?.email || '');
-  return INVOICE_VIEWER_EMAILS.includes(email);
+// ─── Universal employee resolver ────────────────────────────────────
+// Single source of truth for "look up an employee". Every place in the app
+// that needs to find an employee by id / email / full name routes through
+// these helpers. They search BOTH active and offboarded directories so
+// historical references (old tasks, deals, audit logs, comments) always
+// resolve to a real name with "(offboarded)" suffix when relevant.
+//
+// Use `lookupEmployee*` for display / historical lookups.
+// Use `lookupActiveEmployee*` for permission / form-only contexts where
+// offboarded people must NOT be returned.
+function _allEmployees() {
+  const active = state.employeeDirectory || [];
+  const inactive = state.inactiveEmployees || [];
+  return active.concat(inactive);
 }
-
-function isDealFlowViewer() {
-  if (isLeadershipRole()) return true;
-  const email = normalizeEmail(state.employeeProfile?.email || state.session?.user?.email || '');
-  return DEAL_FLOW_EXTRA_EMAILS.includes(email);
+function lookupEmployee(employeeId) {
+  if (!employeeId) return null;
+  const active = (state.employeeDirectory || []).find((e) => e.id === employeeId);
+  if (active) return { ...active, _offboarded: false };
+  const inactive = (state.inactiveEmployees || []).find((e) => e.id === employeeId);
+  if (inactive) return { ...inactive, _offboarded: true };
+  return null;
 }
-
-function canAccessTeamDashboard() {
-  return state.isAuthenticated && (isLeadershipRole() || isFinanceUser());
+function lookupEmployeeName(employeeId, fallback = 'Unknown') {
+  const rec = lookupEmployee(employeeId);
+  if (!rec) return fallback;
+  const name = rec.full_name || fallback;
+  return rec._offboarded ? `${name} (offboarded)` : name;
 }
+function lookupEmployeeByEmail(email) {
+  if (!email) return null;
+  const norm = (typeof normalizeEmail === 'function' ? normalizeEmail(email) : String(email).trim().toLowerCase());
+  const active = (state.employeeDirectory || []).find((e) => (typeof normalizeEmail === 'function' ? normalizeEmail(e.email) : (e.email || '').toLowerCase()) === norm);
+  if (active) return { ...active, _offboarded: false };
+  const inactive = (state.inactiveEmployees || []).find((e) => (typeof normalizeEmail === 'function' ? normalizeEmail(e.email) : (e.email || '').toLowerCase()) === norm);
+  if (inactive) return { ...inactive, _offboarded: true };
+  return null;
+}
+function lookupEmployeeByFullName(fullName) {
+  if (!fullName) return null;
+  const target = String(fullName).trim();
+  const active = (state.employeeDirectory || []).find((e) => e.full_name === target);
+  if (active) return { ...active, _offboarded: false };
+  const inactive = (state.inactiveEmployees || []).find((e) => e.full_name === target);
+  if (inactive) return { ...inactive, _offboarded: true };
+  return null;
+}
+function lookupActiveEmployee(employeeId) {
+  if (!employeeId) return null;
+  return (state.employeeDirectory || []).find((e) => e.id === employeeId) || null;
+}
+function lookupActiveEmployeeByEmail(email) {
+  if (!email) return null;
+  const norm = (typeof normalizeEmail === 'function' ? normalizeEmail(email) : String(email).trim().toLowerCase());
+  return (state.employeeDirectory || []).find((e) => (typeof normalizeEmail === 'function' ? normalizeEmail(e.email) : (e.email || '').toLowerCase()) === norm) || null;
+}
+function lookupActiveEmployeeByFullName(fullName) {
+  if (!fullName) return null;
+  const target = String(fullName).trim();
+  return (state.employeeDirectory || []).find((e) => e.full_name === target) || null;
+}
+function isEmployeeOffboarded(employeeId) {
+  const rec = lookupEmployee(employeeId);
+  return !!(rec && rec._offboarded);
+}
+window.lookupEmployee = lookupEmployee;
+window.lookupEmployeeName = lookupEmployeeName;
+window.lookupEmployeeByEmail = lookupEmployeeByEmail;
+window.lookupEmployeeByFullName = lookupEmployeeByFullName;
+window.lookupActiveEmployee = lookupActiveEmployee;
+window.lookupActiveEmployeeByEmail = lookupActiveEmployeeByEmail;
+window.lookupActiveEmployeeByFullName = lookupActiveEmployeeByFullName;
+window.isEmployeeOffboarded = isEmployeeOffboarded;
 
 function defaultHomeScreen() {
   return 'home-feed';
@@ -435,9 +344,9 @@ function employeeDirectoryByEmailMap() {
 }
 
 function employeeByEmail(email) {
-  const normalized = normalizeEmail(email);
-  if (!normalized) return null;
-  return state.employeeDirectory.find((entry) => normalizeEmail(entry.email) === normalized) || null;
+  // Thin wrapper around the central helper. Active-only by intent — used in
+  // contexts where offboarded users must NOT match (permissions, role checks).
+  return lookupActiveEmployeeByEmail(email);
 }
 
 function managerEmailForEmployee(employee) {
@@ -448,11 +357,11 @@ function managerEmailForEmployee(employee) {
   const dbManager = normalizeEmail(employee?.direct_manager_email || '');
   if (dbManager) return dbManager;
 
-  const directManager = DIRECT_MANAGER_BY_EMAIL[email];
+  const directManager = getDirectManagerMap()[email];
   if (directManager) return normalizeEmail(directManager);
 
   const normalizedTeam = normalizeTeamName(employee?.department?.name, '');
-  const teamManager = TEAM_MANAGER_BY_TEAM[normalizedTeam];
+  const teamManager = getTeamManagerMap()[normalizedTeam];
   if (teamManager && normalizeEmail(teamManager) !== email) return normalizeEmail(teamManager);
 
   const accessLevel = normalizeAccessLevel(employee?.access_level || 'employee');
@@ -504,7 +413,7 @@ function reporteeEmployeesForManager(managerEmail) {
     .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
   // Superadmin sees themselves in their own team view
   if (isSuperadminEmail(normalizedManager)) {
-    const self = state.employeeDirectory.find((e) => normalizeEmail(e.email) === normalizedManager);
+    const self = lookupActiveEmployeeByEmail(normalizedManager);
     if (self) list.unshift(self);
   }
   return list;
@@ -555,80 +464,118 @@ function scrollCanvasToTop() {
 
 // ── Home Dashboard + Timeline ──────────────────────────────────────────
 
-const HOME_TAGLINES = {
-  morning: [
-    'Ready to tackle your day?',
-    "Let's make today count.",
-    "What's on the agenda?",
-    'Fresh start, fresh ideas.',
-  ],
-  afternoon: [
-    "How's the day shaping up?",
-    'Keep the momentum going.',
-    'Halfway there, keep it up!',
-    "Hope it's been a productive one.",
-  ],
-  evening: [
-    'Wrapping up for the day?',
-    'Almost there, finish strong!',
-    'Time to wind down.',
-    "Let's close out the day.",
-  ],
-};
-
-function getHomeGreeting() {
-  const now = new Date();
-  const hour = now.getHours();
-  let timeOfDay, greeting;
-  if (hour < 12) { timeOfDay = 'morning'; greeting = 'Good morning'; }
-  else if (hour < 17) { timeOfDay = 'afternoon'; greeting = 'Good afternoon'; }
-  else { timeOfDay = 'evening'; greeting = 'Good evening'; }
-
-  const firstName = (state.employeeProfile?.full_name || '').split(' ')[0] || 'there';
-  const pool = HOME_TAGLINES[timeOfDay];
-  // Pick by day-of-year so it's stable within a day but rotates daily
-  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayOfYear = Math.round((nowMidnight - new Date(now.getFullYear(), 0, 1)) / 86400000) + 1;
-  const tagline = pool[dayOfYear % pool.length];
-
-  return { greeting: `${greeting}, ${firstName}!`, tagline };
-}
-
+// Just the date — no greeting, no tagline (signals live in the feed itself:
+// Your-day strip, On Leave Today card, Team Pulse).
 function applyHomeGreeting() {
   const el = document.getElementById('homeGreeting');
-  const tl = document.getElementById('homeTagline');
-  if (!el || !tl) return;
-  const { greeting, tagline } = getHomeGreeting();
-  el.textContent = greeting;
-  tl.textContent = tagline;
+  if (!el) return;
+  const now = new Date();
+  const weekday = now.toLocaleDateString('en-IN', { weekday: 'long' });
+  const dayMonth = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' });
+  el.textContent = `${weekday}, ${dayMonth}`;
+}
+
+// Live signals for the home feed: who's out (all roles, via SECURITY DEFINER
+// RPC since leave_requests RLS is own-or-leadership), attributed task
+// completions, deal stage moves, and the viewer's own tasks due today.
+// Every query tolerates failure independently — a missing signal just leaves
+// its section empty, never blanks the page.
+async function loadHomePulse() {
+  if (!state.supabase || !state.isAuthenticated) { state.homePulse = null; return; }
+
+  const todayIso = toISODateLocal();
+  const today = new Date();
+  const from = new Date(today); from.setDate(today.getDate() - 7);
+  const until = new Date(today); until.setDate(today.getDate() + 7);
+  const fromIso = toISODateLocal(from);
+  const untilIso = toISODateLocal(until);
+
+  const [whosOutRes, doneRes, movesRes, dueRes] = await Promise.all([
+    state.supabase.rpc('home_whos_out', { p_from: fromIso, p_until: untilIso }),
+    state.supabase.from('daily_tasks')
+      .select('task_title, updated_at, employee_id')
+      .eq('status', 'done')
+      .gte('updated_at', fromIso)
+      .order('updated_at', { ascending: false })
+      .limit(500),
+    state.supabase.from('deal_stage_history')
+      .select('stage, entered_at, deal:deals(deal_name)')
+      .gte('entered_at', fromIso)
+      .order('entered_at', { ascending: false })
+      .limit(50),
+    // Own tasks due today — always employee_id-filtered (critical pattern)
+    state.currentEmployeeId
+      ? state.supabase.from('daily_tasks')
+          .select('id', { count: 'exact', head: true })
+          .eq('employee_id', state.currentEmployeeId)
+          .eq('task_date', todayIso)
+          .eq('status', 'in_progress')
+      : Promise.resolve({ count: 0, error: null })
+  ]);
+
+  const hidden = getHiddenEmployeeEmails();
+  if (whosOutRes.error) console.warn('home_whos_out failed:', whosOutRes.error.message);
+  if (doneRes.error) console.warn('home pulse tasks failed:', doneRes.error.message);
+  if (movesRes.error) console.warn('home pulse deals failed:', movesRes.error.message);
+
+  // Done-cascade marks sibling copies done too — dedupe by employee + title key
+  const seenDone = new Set();
+  const doneTasks = (doneRes.data || []).filter(t => {
+    const key = `${t.employee_id}|${taskTitleKey(t.task_title)}`;
+    if (seenDone.has(key)) return false;
+    seenDone.add(key);
+    return true;
+  });
+
+  state.homePulse = {
+    whosOut: (whosOutRes.data || []).filter(r => !hidden.includes(normalizeEmail(r.email))),
+    doneTasks,
+    dealMoves: movesRes.data || [],
+    myTasksDueToday: dueRes.error ? 0 : (dueRes.count || 0)
+  };
 }
 
 async function loadHomeStatsFromSupabase() {
   if (!state.supabase || !state.isAuthenticated) {
     state.homeAllocations = [];
+    state.homeAllocTrend = [];
+    state.homePulse = null;
     renderHomeFeed();
     return;
   }
 
   const weekStartIso = getCurrentWeekStartIso();
-  const response = await state.supabase
-    .from('allocations')
-    .select(`
-      employee_id,
-      allocation_percent,
-      project:projects!allocations_project_id_fkey (
-        name
-      )
-    `)
-    .eq('period_type', 'week')
-    .eq('period_start', weekStartIso);
+  // Trailing 4 weeks (incl. current) for the Hours card hover: last-week delta + 4-wk average.
+  const trendStartIso = (() => { const t = new Date(weekStartIso + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - 21); return t.toISOString().slice(0, 10); })();
+  const [response, , trendRes] = await Promise.all([
+    state.supabase
+      .from('allocations')
+      .select(`
+        employee_id,
+        allocation_percent,
+        project:projects!allocations_project_id_fkey (
+          name
+        )
+      `)
+      .eq('period_type', 'week')
+      .eq('period_start', weekStartIso),
+    loadHomePulse().catch(err => { console.warn('Home pulse load failed:', err); state.homePulse = null; }),
+    state.supabase
+      .from('allocations')
+      .select('employee_id, allocation_percent, period_start')
+      .eq('period_type', 'week')
+      .gte('period_start', trendStartIso)
+      .lte('period_start', weekStartIso)
+  ]);
 
   if (response.error) {
     console.error('Home allocations load failed:', response.error);
     state.homeAllocations = [];
   } else {
     state.homeAllocations = response.data || [];
+    state.loadedAt.homeStats = Date.now();
   }
+  state.homeAllocTrend = (trendRes && !trendRes.error) ? (trendRes.data || []) : [];
 
   renderHomeFeed();
 }
@@ -680,52 +627,149 @@ function renderHomeStatCards() {
   const topClientShare = totalAllocPct > 0 ? Math.round((topClientPct / totalAllocPct) * 100) : 0;
   const chillClientShare = totalAllocPct > 0 ? Math.round((chillClientPct / totalAllocPct) * 100) : 0;
 
-  // 3. On leave today
-  const onLeaveToday = [];
-  state.leaveRowsById.forEach(lr => {
-    if (lr.status === 'approved' && lr.start_date <= todayIso && lr.end_date >= todayIso) {
-      onLeaveToday.push(displayPersonName(lr.employee?.full_name || '', 'Someone'));
-    }
-  });
-
-  const leadership = isLeadershipRole();
-  const cards = [];
-
-  if (leadership) {
-    cards.push(
-      {
-        label: 'Hours Allocated',
-        value: `${Math.round(totalWeeklyHours)}h`,
-        detail: 'this week'
-      },
-      {
-        label: 'Top Client',
-        value: topClient,
-        detail: totalAllocPct > 0 ? `${topClientShare}% of allocation` : 'no allocations yet'
-      },
-      {
-        label: 'Chill Client',
-        value: chillClient,
-        detail: totalAllocPct > 0 ? `${chillClientShare}% of allocation` : 'no allocations yet'
+  // 3. On leave today — prefer the all-roles who's-out pulse (employees'
+  // leaveRowsById only holds their own rows under RLS); includes started
+  // pending sick leave so someone out sick isn't counted as "in"
+  const onLeaveToday = []; // { name, half } — a ½ day counts as ½ a person
+  if (state.homePulse?.whosOut) {
+    state.homePulse.whosOut.forEach(r => {
+      if (r.start_date <= todayIso && r.end_date >= todayIso) {
+        onLeaveToday.push({ name: displayPersonName(r.full_name, 'Someone'), half: Boolean(r.is_half_day) });
       }
-    );
+    });
+  } else {
+    state.leaveRowsById.forEach(lr => {
+      if (lr.status === 'approved' && lr.start_date <= todayIso && lr.end_date >= todayIso) {
+        onLeaveToday.push({ name: displayPersonName(lr.employee?.full_name || '', 'Someone'), half: Boolean(lr.is_half_day) });
+      }
+    });
   }
+  // The count is PEOPLE affected today, not leave-days consumed: someone on a
+  // half day is still a person you can't fully reach. The ½ shows on the name.
+  const leaveCountLabel = `${onLeaveToday.length}`;
+  const leaveNameLabel = (p) => escapeHtml(p.name) + (p.half ? ' <span class="mini-meta">(½ day)</span>' : '');
 
-  cards.push({
-    label: 'On Leave Today',
-    value: `${onLeaveToday.length}`,
-    detail: onLeaveToday.length
-      ? (leadership
-          ? (onLeaveToday.length <= 3 ? onLeaveToday.join(', ') : `${onLeaveToday.slice(0, 2).join(', ')} +${onLeaveToday.length - 2}`)
-          : `${onLeaveToday.length} team member${onLeaveToday.length > 1 ? 's' : ''}`)
-      : 'everyone\'s in'
+  // ── Hover expansions (Hours Allocated + Top Client) ──
+  const empDept = new Map();
+  const empNameById = new Map();
+  state.employeeDirectory.forEach(e => {
+    empDept.set(e.id, e.department?.name || 'Unassigned');
+    empNameById.set(e.id, e.full_name || 'Someone');
   });
 
+  // Per-week capacity-weighted hours across the trailing window.
+  const weekPctByEmp = new Map(); // period_start -> Map(empId -> pct)
+  (state.homeAllocTrend || []).forEach(a => {
+    if (!weekPctByEmp.has(a.period_start)) weekPctByEmp.set(a.period_start, new Map());
+    const m = weekPctByEmp.get(a.period_start);
+    m.set(a.employee_id, (m.get(a.employee_id) || 0) + (a.allocation_percent || 0));
+  });
+  const hoursForWeek = (m) => {
+    let h = 0;
+    if (m) m.forEach((pct, empId) => { h += (pct / 100) * (empCapacityMap.get(empId) || 1) * WORK_HOURS_PER_WEEK; });
+    return h;
+  };
+  const isoMinusDays = (iso, n) => { const t = new Date(iso + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - n); return t.toISOString().slice(0, 10); };
+  const weekStartIso = getCurrentWeekStartIso();
+  const last4Iso = [21, 14, 7, 0].map(n => isoMinusDays(weekStartIso, n)); // oldest -> newest
+  const trendHours = last4Iso.map(iso => Math.round(hoursForWeek(weekPctByEmp.get(iso))));
+  const allocatedNow = Math.round(totalWeeklyHours);
+  const lastWeekHours = Math.round(hoursForWeek(weekPctByEmp.get(isoMinusDays(weekStartIso, 7))));
+  const deltaHours = allocatedNow - lastWeekHours;
+  const presentWeeks = last4Iso.map(iso => hoursForWeek(weekPctByEmp.get(iso))).filter(h => h > 0);
+  const monthlyAvg = presentWeeks.length
+    ? Math.round(presentWeeks.reduce((s, h) => s + h, 0) / presentWeeks.length)
+    : allocatedNow;
+  // Capacity baseline counts ONLY people who actually allocated >=1h this week.
+  // Including non-updaters' capacity would inflate "free capacity" unfairly.
+  let capacityHours = 0;
+  employeeAllocTotals.forEach((pct, empId) => {
+    if (pct > 0) capacityHours += (empCapacityMap.get(empId) || 1) * WORK_HOURS_PER_WEEK;
+  });
+  capacityHours = Math.round(capacityHours);
+  const freeHours = Math.max(0, capacityHours - allocatedNow);
+  const usedPct = capacityHours > 0 ? Math.min(100, Math.round((allocatedNow / capacityHours) * 100)) : 0;
+  const maxTrend = Math.max(1, ...trendHours);
+
+  const hoursExpand = allocatedNow > 0 ? `
+      <div class="home-stat-expand">
+        <div class="hse-row"><span>vs last week</span><span class="hse-delta ${deltaHours >= 0 ? 'up' : 'down'}">${deltaHours >= 0 ? '+' : ''}${deltaHours}h <em>(${lastWeekHours}h)</em></span></div>
+        <div class="hse-row"><span>4-week average</span><span class="hse-strong">${monthlyAvg}h</span></div>
+        <div class="hse-row"><span>Free capacity</span><span class="hse-strong">${freeHours}h <em>of ${capacityHours}h</em></span></div>
+        <div class="hse-bar"><div style="width:${usedPct}%"></div></div>
+        <div class="hse-sub" style="margin-top:10px;">Last 4 weeks</div>
+        <div class="hse-spark">${trendHours.map((h, i) => `<div class="hse-spark-bar${i === trendHours.length - 1 ? ' now' : ''}" style="height:${Math.max(8, Math.round((h / maxTrend) * 100))}%" title="${h}h"></div>`).join('')}</div>
+      </div>` : '';
+
+  // Shared client breakdown (team split + biggest contributor) — used by both
+  // Top Client and Chill Client cards.
+  function buildClientBreakdown(clientName, clientTotalPct) {
+    if (!(clientTotalPct > 0) || !isFinite(clientTotalPct) || clientName === '--') return '';
+    const deptPct = new Map();
+    const empPctOnClient = new Map();
+    state.homeAllocations.forEach(a => {
+      if ((a.project?.name || 'Unassigned') !== clientName) return;
+      const d = empDept.get(a.employee_id) || 'Unassigned';
+      deptPct.set(d, (deptPct.get(d) || 0) + (a.allocation_percent || 0));
+      empPctOnClient.set(a.employee_id, (empPctOnClient.get(a.employee_id) || 0) + (a.allocation_percent || 0));
+    });
+    const teamRows = [...deptPct.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([d, pct]) => {
+      const share = Math.round((pct / clientTotalPct) * 100);
+      return `<div class="hse-team"><div class="hse-team-head"><span>${escapeHtml(d)}</span><span>${share}%</span></div><div class="hse-bar"><div style="width:${share}%"></div></div></div>`;
+    }).join('');
+    let topEmpId = null, topEmpPct = 0;
+    empPctOnClient.forEach((pct, id) => { if (pct > topEmpPct) { topEmpPct = pct; topEmpId = id; } });
+    const contribHours = topEmpId ? Math.round((topEmpPct / 100) * (empCapacityMap.get(topEmpId) || 1) * WORK_HOURS_PER_WEEK) : 0;
+    const contribName = topEmpId ? displayPersonName(empNameById.get(topEmpId), 'Someone') : '--';
+    return `
+      <div class="home-stat-expand">
+        <div class="hse-sub">Allocation by team</div>
+        ${teamRows}
+        <div class="hse-row hse-divide"><span>Most time this week</span><span class="hse-strong">${escapeHtml(contribName)} · ${contribHours}h</span></div>
+      </div>`;
+  }
+  const topClientExpand = buildClientBreakdown(topClient, topClientPct);
+  const chillClientExpand = buildClientBreakdown(chillClient, chillClientPct);
+
+  const cards = [
+    {
+      label: 'Hours Allocated',
+      value: `${allocatedNow}h`,
+      detail: 'this week',
+      expand: hoursExpand
+    },
+    {
+      label: 'Top Client',
+      value: escapeHtml(topClient),
+      detail: totalAllocPct > 0 ? `${topClientShare}% of allocation` : 'no allocations yet',
+      expand: topClientExpand
+    },
+    {
+      label: 'Chill Client',
+      value: escapeHtml(chillClient),
+      detail: totalAllocPct > 0 ? `${chillClientShare}% of allocation` : 'no allocations yet',
+      expand: chillClientExpand
+    },
+    {
+      label: 'On Leave Today',
+      value: leaveCountLabel,
+      // Names visible to all roles (team decision, matches Who's Around);
+      // ½-day people count as ½ in the number and get a (½ day) tag
+      detail: onLeaveToday.length
+        ? (onLeaveToday.length <= 3
+            ? onLeaveToday.map(leaveNameLabel).join(', ')
+            : `${onLeaveToday.slice(0, 2).map(leaveNameLabel).join(', ')} +${onLeaveToday.length - 2}`)
+        : 'everyone\'s in'
+    }
+  ];
+
+  const caretSvg = '<svg class="home-stat-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
   homeStatCards.innerHTML = cards.map(c => `
-    <div class="home-stat-card">
-      <span class="home-stat-label">${c.label}</span>
+    <div class="home-stat-card${c.expand ? ' has-expand' : ''}"${c.expand ? ' tabindex="0"' : ''}>
+      <span class="home-stat-label">${c.label}${c.expand ? caretSvg : ''}</span>
       <span class="home-stat-value">${c.value}</span>
       <span class="home-stat-detail">${c.detail}</span>
+      ${c.expand || ''}
     </div>
   `).join('');
 }
@@ -748,10 +792,12 @@ function formatSusCalBadge(entry, todayIso, weekEndIso) {
   }
   // Upcoming — show start date
   const d = parseIsoDateLocal(entry.start_date);
+  if (!d) return { text: '', cls: '' };
   const mon = d.toLocaleString('en-IN', { month: 'short' });
   const day = d.getDate();
   if (entry.start_date === entry.end_date) return { text: `${mon} ${day}`, cls: '' };
   const ed = parseIsoDateLocal(entry.end_date);
+  if (!ed) return { text: `${mon} ${day}`, cls: '' };
   const emon = ed.toLocaleString('en-IN', { month: 'short' });
   if (mon === emon) return { text: `${mon} ${day}–${ed.getDate()}`, cls: '' };
   return { text: `${mon} ${day} – ${emon} ${ed.getDate()}`, cls: '' };
@@ -842,7 +888,7 @@ function buildTimelineEvents() {
   const daysAhead7Iso = toISODateLocal(daysAhead7);
 
   // Holidays (today + next 7 days)
-  PUBLIC_HOLIDAYS_2026.forEach(h => {
+  getPublicHolidays().forEach(h => {
     if (h.date >= todayIso && h.date <= daysAhead7Iso) {
       const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const daysUntil = Math.round((parseIsoDateLocal(h.date) - todayMidnight) / 86400000);
@@ -858,33 +904,42 @@ function buildTimelineEvents() {
     }
   });
 
-  // Track on-leave-today IDs to avoid duplicating in leave approvals
-  const onLeaveIds = new Set();
-  state.leaveRowsById.forEach(lr => {
-    if (lr.status === 'approved' && lr.start_date <= todayIso && lr.end_date >= todayIso) {
-      onLeaveIds.add(lr.id);
-    }
-  });
+  // Leave events (all roles, via home_whos_out RPC) flow into the day-by-day
+  // stream under their own date. Someone out TODAY lives on the "On Leave
+  // Today" stat card instead — no duplicate feed card. Pending sick days are
+  // shown (tagged "awaiting approval") rather than invisible.
+  if (state.homePulse?.whosOut) {
+    const seenLeave = new Set();
+    state.homePulse.whosOut.forEach(r => {
+      const key = `${r.email}|${r.start_date}|${r.end_date}`;
+      if (seenLeave.has(key)) return;
+      seenLeave.add(key);
+      if (r.start_date <= todayIso && r.end_date >= todayIso) return; // on the stat card
 
-  // Leave approvals — leadership only, only upcoming or recent leaves (skip retrospective additions)
-  const showLeaveApprovals = isLeadershipRole();
-  if (showLeaveApprovals) state.leaveRowsById.forEach(lr => {
-    if (lr.status === 'approved' && lr.decided_at && !onLeaveIds.has(lr.id)) {
-      if (lr.start_date < daysAgo14Iso) return; // skip old leaves added retroactively
-      const decidedIso = toISODateLocal(new Date(lr.decided_at));
-      if (decidedIso >= daysAgo14Iso && decidedIso <= todayIso) {
-        const name = displayPersonName(lr.employee?.full_name || '', 'Someone');
-        events.push({
-          type: 'leave-approved',
-          icon: '\uD83C\uDFD6\uFE0F',
-          text: `${name}'s ${lr.leave_type || 'leave'} approved`,
-          detail: `${formatDateForLabel(lr.start_date)} – ${formatDateForLabel(lr.end_date)}`,
-          date: decidedIso,
-          sortDate: decidedIso
-        });
-      }
-    }
-  });
+      const name = displayPersonName(r.full_name, 'Someone').split(' ')[0];
+      const sick = r.leave_type === 'SL';
+      const typeLabel = LEAVE_TYPE_LABEL[r.leave_type] || 'leave';
+      const oneDay = r.start_date === r.end_date;
+      const range = oneDay
+        ? formatDateForLabel(r.start_date)
+        : `${formatDateForLabel(r.start_date)} - ${formatDateForLabel(r.end_date)}`;
+      const halfTag = r.is_half_day ? ' · half day' : '';
+      const pendingTag = r.status === 'pending' ? ' · awaiting approval' : '';
+      const past = r.end_date < todayIso;
+      const eventDate = past ? r.end_date : r.start_date;
+      const text = past
+        ? (sick ? `${name} was out sick` : `${name} was on ${typeLabel}`)
+        : (sick ? `${name} will be out sick` : `${name} off on ${typeLabel}`);
+      events.push({
+        type: sick ? 'whos-out-sick' : 'whos-out',
+        icon: sick ? '🤒' : '🏖️',
+        text,
+        detail: `${range}${halfTag}${pendingTag}`,
+        date: eventDate,
+        sortDate: eventDate
+      });
+    });
+  }
 
   // New team members (last 14 days)
   state.employeeDirectory.forEach(emp => {
@@ -984,6 +1039,118 @@ function buildTimelineEvents() {
   return events.slice(0, 30);
 }
 
+const LEAVE_TYPE_LABEL = { SL: 'sick leave', PL: 'planned leave', CL: 'casual leave' };
+// (Who's-out events are built inline in buildTimelineEvents - they live in the
+// day-by-day stream, not a pinned section. Ongoing-today leave is shown on the
+// "On Leave Today" stat card instead.)
+
+// "Team pulse" — attributed task completions (visible to everyone, per the
+// team's call) and deal-flow movement (forward stages for everyone; contracted
+// deals celebrated; stalled/closed-lost stay off the feed).
+function buildTeamPulseEvents() {
+  const pulse = state.homePulse;
+  if (!pulse) return [];
+  const todayIso = toISODateLocal();
+  const events = [];
+  const nameById = new Map();
+  state.employeeDirectory.forEach(e => nameById.set(e.id, displayPersonName(e.full_name, 'Someone').split(' ')[0]));
+  const hidden = getHiddenEmployeeEmails();
+  const emailById = new Map();
+  state.employeeDirectory.forEach(e => emailById.set(e.id, normalizeEmail(e.email)));
+
+  const visibleDone = (pulse.doneTasks || []).filter(t => !hidden.includes(emailById.get(t.employee_id) || ''));
+
+  // Today's completions — attributed, expandable to task titles
+  const doneToday = visibleDone.filter(t => toISODateLocal(new Date(t.updated_at)) === todayIso);
+  if (doneToday.length) {
+    const byPerson = new Map();
+    doneToday.forEach(t => {
+      const n = nameById.get(t.employee_id) || 'Someone';
+      if (!byPerson.has(n)) byPerson.set(n, []);
+      byPerson.get(n).push(t.task_title);
+    });
+    const names = [...byPerson.keys()];
+    const lead = names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3}` : '');
+    const bullets = [];
+    byPerson.forEach((titles, n) => {
+      titles.slice(0, 4).forEach(title => bullets.push(`<li><span class="feed-bullet-tag shipped">${escapeHtml(n)}</span> ${escapeHtml(title)}</li>`));
+      if (titles.length > 4) bullets.push(`<li><span class="feed-bullet-tag shipped">${escapeHtml(n)}</span> +${titles.length - 4} more</li>`);
+    });
+    events.push({
+      type: 'pulse-today', icon: '✅',
+      text: `${doneToday.length} task${doneToday.length > 1 ? 's' : ''} shipped today — ${lead}`,
+      detail: 'tap to see what got done', date: todayIso, sortDate: `9-${todayIso}`,
+      expandable: `<ul class="feed-expand-list">${bullets.slice(0, 16).join('')}</ul>`
+    });
+  }
+
+  // Week momentum — per-person counts
+  if (visibleDone.length) {
+    const counts = new Map();
+    visibleDone.forEach(t => {
+      const n = nameById.get(t.employee_id) || 'Someone';
+      counts.set(n, (counts.get(n) || 0) + 1);
+    });
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const bullets = ranked.map(([n, c]) => `<li><span class="feed-bullet-tag shipped">${c}</span> ${escapeHtml(n)}</li>`);
+    events.push({
+      type: 'pulse-week', icon: '🔥',
+      text: `Team shipped ${visibleDone.length} tasks this week`,
+      detail: `${ranked.length} people contributing`, date: todayIso, sortDate: `8-${todayIso}`,
+      expandable: `<ul class="feed-expand-list">${bullets.join('')}</ul>`
+    });
+  }
+
+  // Deal movement — forward stages only; contracted gets the confetti
+  const FORWARD_STAGES = { qualified: 'Qualified', discovery: 'Discovery', proposal: 'Proposal', negotiated: 'Negotiation' };
+  const seenDeal = new Set();
+  (pulse.dealMoves || []).forEach(m => {
+    const dealName = m.deal?.deal_name || '';
+    if (!dealName) return;
+    const moveIso = toISODateLocal(new Date(m.entered_at));
+    const key = `${dealName}|${moveIso}`;
+    if (seenDeal.has(key)) return; // latest stage per deal per day (rows arrive desc)
+    seenDeal.add(key);
+    if (m.stage === 'contracted') {
+      events.push({
+        type: 'deal-won', icon: '🎉',
+        text: `${dealName} signed — new business!`,
+        detail: formatDateForLabel(moveIso), date: moveIso, sortDate: `7-${moveIso}`
+      });
+    } else if (FORWARD_STAGES[m.stage]) {
+      events.push({
+        type: 'deal-move', icon: '🤝',
+        text: `${dealName} moved to ${FORWARD_STAGES[m.stage]}`,
+        detail: formatDateForLabel(moveIso), date: moveIso, sortDate: `6-${moveIso}`
+      });
+    }
+  });
+
+  events.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
+  return events.slice(0, 8);
+}
+
+// Personal "Your day" strip — own tasks due + own allocation this week
+function buildYourDayEvent() {
+  const pulse = state.homePulse;
+  if (!pulse) return null;
+  const due = pulse.myTasksDueToday || 0;
+  let myAllocPct = 0;
+  (state.homeAllocations || []).forEach(a => {
+    if (a.employee_id === state.currentEmployeeId) myAllocPct += (a.allocation_percent || 0);
+  });
+  const bits = [];
+  if (due > 0) bits.push(`${due} task${due > 1 ? 's' : ''} due today`);
+  else bits.push('no tasks due today');
+  if (myAllocPct > 0) bits.push(`you're ${Math.round(myAllocPct)}% allocated this week`);
+  return {
+    type: 'your-day', icon: '👋',
+    text: `Your day — ${bits.join(' · ')}`,
+    detail: 'open My Work →', link: 'daily-tasklist',
+    date: toISODateLocal(), sortDate: ''
+  };
+}
+
 function renderBirthdayStrip() {
   const panel = document.getElementById('homeBirthdayPanel');
   if (!panel) return;
@@ -1002,7 +1169,7 @@ function renderBirthdayStrip() {
         thisYear.setFullYear(thisYear.getFullYear() + 1);
       }
       const diffDays = Math.round((thisYear - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
-      return { name: e.full_name, md, diffDays, date: thisYear };
+      return { name: displayPersonName(e.full_name, 'Employee'), md, diffDays, date: thisYear };
     })
     .filter((b) => b.diffDays >= 0 && b.diffDays <= 7)
     .sort((a, b) => a.diffDays - b.diffDays);
@@ -1035,8 +1202,10 @@ function renderHomeFeed() {
   if (!homeFeedList || !homeFeedEmpty) return;
 
   const events = buildTimelineEvents();
+  const yourDay = buildYourDayEvent();
+  const teamPulse = buildTeamPulseEvents();
 
-  if (!events.length) {
+  if (!events.length && !teamPulse.length && !yourDay) {
     homeFeedList.innerHTML = '';
     homeFeedEmpty.classList.remove('hidden');
     return;
@@ -1046,6 +1215,9 @@ function renderHomeFeed() {
 
   const todayIso = toISODateLocal();
   const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const yesterdayIso = toISODateLocal(yesterday);
   const daysAgo7 = new Date(today);
   daysAgo7.setDate(today.getDate() - 7);
   const daysAgo7Iso = toISODateLocal(daysAgo7);
@@ -1053,11 +1225,13 @@ function renderHomeFeed() {
   daysAhead7.setDate(today.getDate() + 7);
   const daysAhead7Iso = toISODateLocal(daysAhead7);
 
-  const sections = { today: [], thisWeek: [], recent: [] };
+  const sections = { today: [], yesterday: [], thisWeek: [], recent: [] };
   events.forEach(e => {
     if (e.date === todayIso || (e.date > todayIso && e.date <= daysAhead7Iso)) {
       if (e.date === todayIso) sections.today.push(e);
       else sections.thisWeek.push(e);
+    } else if (e.date === yesterdayIso) {
+      sections.yesterday.push(e);
     } else if (e.date >= daysAgo7Iso && e.date < todayIso) {
       sections.thisWeek.push(e);
     } else {
@@ -1068,24 +1242,27 @@ function renderHomeFeed() {
   let html = '';
   const renderSection = (label, items) => {
     if (!items.length) return;
-    html += `<h4 class="feed-section-heading">${label}</h4>`;
+    if (label) html += `<h4 class="feed-section-heading">${label}</h4>`;
     items.forEach(e => {
-      const titleAttr = e.fullText ? ` title="${e.fullText.replace(/"/g, '&quot;')}"` : '';
-      const linkAttr = !e.expandable && e.link ? ` data-link="${e.link}" style="cursor:pointer"` : '';
+      const titleAttr = e.fullText ? ` title="${escapeHtml(e.fullText)}"` : '';
+      const linkAttr = !e.expandable && e.link ? ` data-link="${escapeHtml(e.link)}" style="cursor:pointer"` : '';
       const expandAttr = e.expandable ? ' data-expandable style="cursor:pointer"' : '';
       html += `
-        <div class="feed-card feed-type-${e.type}"${titleAttr}${linkAttr}${expandAttr}>
-          <span class="feed-icon">${e.icon}</span>
+        <div class="feed-card feed-type-${escapeHtml(e.type)}"${titleAttr}${linkAttr}${expandAttr}>
+          <span class="feed-icon">${escapeHtml(e.icon)}</span>
           <div class="feed-body">
-            <span class="feed-text">${e.text}${e.expandable ? ' <span class="feed-chevron">▾</span>' : ''}</span>
-            ${e.detail ? `<span class="feed-detail">${e.detail.replace(/\n/g, '<br>')}</span>` : ''}
+            <span class="feed-text">${escapeHtml(e.text)}${e.expandable ? ' <span class="feed-chevron">▾</span>' : ''}</span>
+            ${e.detail ? `<span class="feed-detail">${escapeHtml(e.detail).replace(/\n/g, '<br>')}</span>` : ''}
             ${e.expandable ? `<div class="feed-expand hidden">${e.expandable}</div>` : ''}
           </div>
         </div>`;
     });
   };
 
+  if (yourDay) renderSection('', [yourDay]);
+  renderSection('Team Pulse', teamPulse);
   renderSection('Today', sections.today);
+  renderSection('Yesterday', sections.yesterday);
   renderSection('This Week', sections.thisWeek);
   renderSection('Recent', sections.recent);
 
@@ -1112,31 +1289,83 @@ function renderHomeFeed() {
   });
 }
 
+// Screen-switch cache: skip a loader if its data landed <60s ago. ONLY the
+// screen-switch call sites below use this — every mutation path calls the raw
+// loader directly, which refetches AND renews the stamp, so a stale-after-
+// action state is impossible by construction. On tab focus, stamps older than
+// 10 minutes are dropped (see the visibilitychange listener).
+const SCREEN_CACHE_TTL_MS = 60 * 1000;
+const FOCUS_STALE_MS = 10 * 60 * 1000;
+function maybeLoad(key, loader) {
+  if (isFreshStamp(state.loadedAt[key], Date.now(), SCREEN_CACHE_TTL_MS)) return Promise.resolve();
+  return loader();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !state.isAuthenticated) return;
+  const now = Date.now();
+  let droppedStale = false;
+  Object.keys(state.loadedAt).forEach((key) => {
+    if (!isFreshStamp(state.loadedAt[key], now, FOCUS_STALE_MS)) {
+      delete state.loadedAt[key];
+      droppedStale = true;
+    }
+  });
+  if (droppedStale && ['home-feed', 'people-directory', 'client-projects', 'daily-tasklist', 'leave-center'].includes(getActiveScreenId())) {
+    refreshScreenData(getActiveScreenId());
+  }
+});
+
 function refreshScreenData(screenId) {
   if (!state.isAuthenticated) return;
   switch (screenId) {
     case 'home-feed':
-      loadHomeStatsFromSupabase().catch(console.error);
-      loadFeatureRequestsFromSupabase().then(() => renderHomeFeed()).catch(console.error);
+      maybeLoad('homeStats', loadHomeStatsFromSupabase).then(() => renderHomeFeed()).catch(console.error);
+      maybeLoad('featureRequests', loadFeatureRequestsFromSupabase).then(() => renderHomeFeed()).catch(console.error);
       break;
     case 'employee-profile':
       loadProfileAllocationHistoryFromSupabase().catch(console.error);
       loadInvoices().catch(console.error);
+      break;
+    case 'daily-tasklist':
+      // My Work: refetch tasks on screen entry so edits made elsewhere (or by
+      // a manager) show without a hard refresh. Carry-forward is session-gated
+      // inside the loader, so this won't re-run cleanup.
+      loadDailyTasksFromSupabase().catch(console.error);
+      break;
+    case 'leave-center':
+      // My Leave: refresh both the request list and the balance summary.
+      loadLeaveRequestsFromSupabase().catch(console.error);
+      loadLeaveCycleSummaryFromSupabase().catch(console.error);
       break;
     case 'my-allocations':
       // Skip reload if allocation table already has rows (preserves unsaved edits)
       if (allocationTable && allocationTable.querySelector('tr')) break;
       loadWeeklyAllocationsFromSupabase().catch(console.error);
       break;
+    case 'executive-dashboard':
+      if (isLeadershipRole()) loadExecutiveDashboard().catch(console.error);
+      break;
     case 'leadership-planner':
       if (isLeadershipRole()) loadTeamDashboardFromSupabase().catch(console.error);
       break;
     case 'people-directory':
-      loadHomeStatsFromSupabase().then(() => renderPeopleDirectory()).catch(console.error);
+      maybeLoad('homeStats', loadHomeStatsFromSupabase).then(() => renderPeopleDirectory()).catch(console.error);
+      if (isLeadershipRole()) loadOnboardingBadge().catch(console.error);
+      break;
+    case 'admin-settings':
+      if (isSuperadminUser()) loadPolicyDocuments().catch(console.error);
+      loadPublicHolidaysFromSupabase().then(renderHolidaysAdmin).catch(console.error);
+      if (isSuperadminUser()) loadAccessOverrides().then(renderAccessOverridesAdmin).catch(console.error);
+      if (isSuperadminUser()) loadAppConfig().then(renderAppConfigAdmin).catch(console.error);
+      loadCronHealth().then(renderCronHealthAdmin).catch(console.error);
+      break;
+    case 'policy':
+      loadPolicyPage().catch(console.error);
       break;
     case 'client-projects':
       hideClientDetail();
-      loadHomeStatsFromSupabase().catch(console.error);
+      maybeLoad('homeStats', loadHomeStatsFromSupabase).catch(console.error);
       break;
     case 'feature-requests':
       loadFeatureRequestsFromSupabase().catch(console.error);
@@ -1162,6 +1391,17 @@ function refreshScreenData(screenId) {
         renderClientAnalyticsTab(analyticsCurrentClientId);
       } else {
         // No client selected (e.g. direct hash navigation) — redirect to client list
+        navigateToScreen('client-projects', { replace: true });
+      }
+      break;
+    case 'client-scope-coverage':
+      if (!isLeadershipRole()) {
+        navigateToScreen('home-feed', { replace: true });
+        break;
+      }
+      if (scopeCoverageCurrentClientId) {
+        renderClientScopeCoverage(scopeCoverageCurrentClientId).catch(console.error);
+      } else {
         navigateToScreen('client-projects', { replace: true });
       }
       break;
@@ -1272,6 +1512,9 @@ function applyRoleAccess() {
   document.querySelectorAll('.leadership-only').forEach((node) => {
     node.classList.toggle('hidden', !leadershipAccess);
   });
+  document.querySelectorAll('.scope-coverage-only').forEach((node) => {
+    node.classList.toggle('hidden', !canEditScopeCoverage());
+  });
   document.querySelectorAll('.superadmin-only').forEach((node) => {
     node.classList.toggle('hidden', !adminSettingsAccess);
   });
@@ -1305,6 +1548,12 @@ function applyRoleAccess() {
   if (adminSettingsScreen) {
     adminSettingsScreen.classList.toggle('hidden', !adminSettingsAccess);
   }
+
+  // Onboarding: policy docs editor visible to admin only
+  const policyDocsPanel = document.getElementById('policyDocumentsPanel');
+  if (policyDocsPanel) policyDocsPanel.style.display = adminSettingsAccess ? '' : 'none';
+  const onbTemplatesPanel = document.getElementById('onboardingTemplatesPanel');
+  if (onbTemplatesPanel) onbTemplatesPanel.style.display = adminSettingsAccess ? '' : 'none';
 
   if (!leadershipAccess) {
     const ownName = state.employeeProfile?.full_name || state.currentEmployee || DEFAULT_EMPLOYEE;
@@ -1404,21 +1653,23 @@ const MOBILE_TAB_ICONS = {
   'client-projects': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
   'admin-settings': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   'feature-requests': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  'executive-dashboard': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>',
   'bd-pipeline': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   'invoice-center': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
   'more': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>',
 };
 
 const MOBILE_TAB_LABELS = {
-  'daily-tasklist': 'Work Planner',
+  'daily-tasklist': 'My Work',
   'my-allocations': 'Allocation',
-  'leave-center': 'Leave',
+  'leave-center': 'My Leave',
   'home-feed': 'Home',
-  'leadership-planner': 'Team',
-  'people-directory': 'People',
+  'leadership-planner': 'Resources',
+  'people-directory': 'Directory',
   'client-projects': 'Clients',
   'admin-settings': 'Admin',
   'feature-requests': 'Features',
+  'executive-dashboard': 'Overview',
   'bd-pipeline': 'Deal Flow',
   'invoice-center': 'Invoices',
   'more': 'More',
@@ -1437,6 +1688,7 @@ function getMobileTabConfig() {
       tabs: ['home-feed', 'leadership-planner', 'daily-tasklist'],
       more: [
         ...(dealFlow ? ['bd-pipeline'] : []),
+        'executive-dashboard',
         'my-allocations', 'leave-center', 'people-directory', 'client-projects', 'feature-requests',
         ...(isSuperadminUser() ? ['admin-settings'] : [])],
     };
@@ -1535,27 +1787,47 @@ function syncMobileNav() {
 }
 
 let _lastMobileState = window.matchMedia('(max-width: 768px)').matches;
-// Re-run daily cleanup when tab regains focus (handles overnight idle)
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && localStorage.getItem('colony_task_cleanup_date') !== toISODateLocal()) {
-    loadDailyTasksFromSupabase();
+// Re-run daily cleanup when tab regains focus (handles overnight idle).
+// Guard with a lock to prevent concurrent loadDailyTasksFromSupabase calls.
+let _taskLoadInFlight = false;
+let _carryForwardDoneThisSession = false;
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || _taskLoadInFlight) return;
+  if (!state.isAuthenticated) return;
+  const today = toISODateLocal();
+  if (localStorage.getItem('colony_task_cleanup_date') === today) return;
+  _taskLoadInFlight = true;
+  _carryForwardDoneThisSession = false; // new day — allow carry-forward to run again
+  try {
+    await loadDailyTasksFromSupabase();
+  } catch (err) {
+    console.error('Visibility-change task reload failed:', err);
+  } finally {
+    _taskLoadInFlight = false;
   }
 });
+
+// Midnight boundary: detect date change and re-run carry-forward for the new day.
+// Fires every 60s — lightweight check, only reloads when date actually changes.
+let _lastCheckedDate = toISODateLocal();
+setInterval(() => {
+  if (!state.isAuthenticated) return;
+  const now = toISODateLocal();
+  if (now !== _lastCheckedDate) {
+    _lastCheckedDate = now;
+    _carryForwardDoneThisSession = false;
+    loadDailyTasksFromSupabase().catch((err) => console.error('Midnight reload failed:', err));
+  }
+}, 60000);
 
 window.addEventListener('resize', () => {
   syncMobileNav();
   const isMobile = window.matchMedia('(max-width: 768px)').matches;
   if (isMobile !== _lastMobileState) {
     _lastMobileState = isMobile;
-    // Re-render matrix when crossing mobile/desktop breakpoint
-    const matrixTable = document.getElementById('resourceMatrix');
-    const mobileCards = document.getElementById('matrixMobileCards');
-    if (!isMobile) {
-      if (matrixTable) matrixTable.style.display = '';
-      if (mobileCards) mobileCards.innerHTML = '';
-    }
-    if (state._matrixTeamMembers) {
-      renderResourceMatrix(state._matrixTeamMembers, state._matrixAllocationRows, state._matrixWeekStarts || [], '');
+    // Re-render planner when crossing mobile/desktop breakpoint
+    if (state._plannerByDept) {
+      renderActivePlannerView();
     }
   }
 });
@@ -1624,11 +1896,15 @@ function upsertEmployeeInStore(employee) {
 }
 
 async function fetchRuntimeConfig() {
-  // Localhost fallback: Netlify functions aren't available locally
+  // Localhost fallback: Netlify functions aren't available under a plain
+  // static server. Paste your own project's values here for local dev — the
+  // anon key is safe in a browser (RLS enforces access), but keep it out of
+  // version control: use `netlify dev` instead, which serves /api/runtime-config
+  // from your .env. See SETUP.md.
   if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     return {
-      supabaseUrl: 'YOUR_SUPABASE_URL',
-      supabaseAnonKey: 'YOUR_SUPABASE_ANON_KEY',
+      supabaseUrl: 'https://your-project-ref.supabase.co',
+      supabaseAnonKey: 'your_supabase_anon_key',
       appBaseUrl: location.origin,
       allowedDomain: 'youragency.com'
     };
@@ -1661,6 +1937,12 @@ async function fetchCurrentEmployeeProfile() {
       access_level,
       leave_tracking_enabled,
       approver_emails,
+      onboarding_completed,
+      emergency_contact_name,
+      emergency_contact_phone,
+      current_city,
+      date_of_birth,
+      direct_manager_email,
       department:departments!employees_department_id_fkey (
         id,
         name,
@@ -1674,13 +1956,11 @@ async function fetchCurrentEmployeeProfile() {
   return employeeResult.data;
 }
 
-async function applyAuthState(session) {
-  const wasAuthenticated = state.isAuthenticated;
-  const activeScreenBeforeAuthUpdate = getActiveScreenId();
-  state.session = session || null;
-  state.isAuthenticated = Boolean(session);
+// applyAuthState is split into focused phases (slice 7) — the orchestrator at
+// the bottom preserves the exact original order, awaits and early-returns.
 
-  if (!session) {
+// Phase: full reset to the signed-out state (also runs on sign-out).
+function resetToSignedOutState() {
     state.employeeProfile = null;
     state.currentEmployeeId = null;
     state.employeeDirectory = [];
@@ -1731,23 +2011,16 @@ async function applyAuthState(session) {
     applyRoleAccess();
     activateScreen('login');
     dismissSplash();
-    return;
-  }
+}
 
-  const authEmail = normalizeEmail(session.user?.email);
-  if (!authEmail.endsWith(ANT_DOMAIN)) {
-    const domainError =
-      state.authIntent === 'register'
-        ? 'Registration failed. Use your @youragency.com Google Workspace account.'
-        : 'Sign-in failed. Use your @youragency.com Google Workspace account.';
-    state.pendingAuthStatus = { message: domainError, className: 'status error' };
-    await state.supabase.auth.signOut();
-    setLoginStatus(domainError, 'status error');
-    return;
-  }
-
-  try {
-    const employeeProfile = await fetchCurrentEmployeeProfile();
+// Phase: profile + role. Loads access overrides and app_config BEFORE the role
+// is computed; self-heals DB access_level drift against the enforced pin.
+async function establishIdentityAndRole(authEmail, wasAuthenticated) {
+    const employeeProfile = stripMiddleNameOnEmployee(await fetchCurrentEmployeeProfile());
+    // Load editable access overrides before computing role (falls back to the
+    // hardcoded ENFORCED_ACCESS_BY_EMAIL if the table is empty/unreachable).
+    await loadAccessOverrides().catch(err => console.warn('Access overrides load failed, using fallback:', err));
+    await loadAppConfig().catch(err => console.warn('App config load failed, using fallback:', err));
     const enforcedAccess = getEnforcedAccessLevel(authEmail);
     state.employeeProfile = employeeProfile;
     state.currentEmployeeId = employeeProfile.id;
@@ -1764,10 +2037,14 @@ async function applyAuthState(session) {
           employeeProfile.access_level = enforcedAccess;
           console.log(`Synced enforced access level '${enforcedAccess}' to DB for ${authEmail}`);
         }
-      });
+      }).catch(err => console.warn('Access level sync failed:', err));
     }
     upsertEmployeeInStore(employeeProfile);
+    return employeeProfile;
+}
 
+// Phase: signed-in UI chrome (buttons, identity labels, status, visibility).
+function applySignedInChrome(employeeProfile, authEmail, wasAuthenticated) {
     if (signInBtn) signInBtn.classList.add('hidden');
     if (registerBtn) registerBtn.classList.add('hidden');
     if (logoutBtn) {
@@ -1793,13 +2070,10 @@ async function applyAuthState(session) {
     applyInvoiceVisibility();
     applyDealFlowVisibility();
     applyFractionalVisibility();
+}
 
-    // Skip full data reload on token refresh — preserves unsaved form inputs
-    if (wasAuthenticated) {
-      dismissSplash();
-      return;
-    }
-
+// Phase: initial data fan-out (each load fails independently).
+async function loadInitialAppData() {
     await Promise.all([
       loadEmployeeDirectoryFromSupabase().catch((error) => {
         console.error('Employee directory load failed:', error);
@@ -1818,8 +2092,21 @@ async function applyAuthState(session) {
       }),
       loadFeatureRequestsFromSupabase().catch((error) => {
         console.error('Feature requests load failed:', error);
+      }),
+      loadPublicHolidaysFromSupabase().catch((error) => {
+        console.error('Public holidays load failed:', error);
+      }),
+      loadNotifySignals().catch((error) => {
+        console.error('Notify signals load failed:', error);
+      }),
+      loadRecurringTasks().catch((error) => {
+        console.error('Recurring tasks load failed:', error);
       })
     ]);
+}
+
+// Phase: post-sign-in routing (hash screen vs default dashboard vs refresh).
+function routeAfterSignIn(wasAuthenticated, activeScreenBeforeAuthUpdate) {
     const hashScreen = readScreenFromHash();
     const hashIsAuthCallback = hashContainsAuthTokens();
     const shouldOpenDashboard = !wasAuthenticated && (!hashScreen || hashIsAuthCallback) && activeScreenBeforeAuthUpdate === 'login';
@@ -1833,6 +2120,57 @@ async function applyAuthState(session) {
       // because auth hadn't completed yet — refresh it now.
       refreshScreenData(getActiveScreenId());
     }
+}
+
+async function applyAuthState(session) {
+  const wasAuthenticated = state.isAuthenticated;
+  const activeScreenBeforeAuthUpdate = getActiveScreenId();
+  state.session = session || null;
+  state.isAuthenticated = Boolean(session);
+
+  if (!session) {
+    resetToSignedOutState();
+    return;
+  }
+
+  const authEmail = normalizeEmail(session.user?.email);
+  if (!authEmail.endsWith(ANT_DOMAIN)) {
+    const domainError =
+      state.authIntent === 'register'
+        ? 'Registration failed. Use your @youragency.com Google Workspace account.'
+        : 'Sign-in failed. Use your @youragency.com Google Workspace account.';
+    state.pendingAuthStatus = { message: domainError, className: 'status error' };
+    await state.supabase.auth.signOut();
+    setLoginStatus(domainError, 'status error');
+    return;
+  }
+
+  try {
+    const employeeProfile = await establishIdentityAndRole(authEmail, wasAuthenticated);
+    applySignedInChrome(employeeProfile, authEmail, wasAuthenticated);
+
+    // Skip full data reload on token refresh — preserves unsaved form inputs
+    if (wasAuthenticated) {
+      dismissSplash();
+      return;
+    }
+
+    await loadInitialAppData();
+
+    // --- Onboarding: check if this is a new hire needing the welcome overlay ---
+    const needsOnboarding = state.employeeProfile?.onboarding_completed === false;
+    if (needsOnboarding) {
+      await initOnboardingOverlay();
+      dismissSplash();
+      return;
+    }
+
+    // Load onboarding data for sidebar badge (leadership only)
+    if (isLeadershipRole()) {
+      loadOnboardingBadge().catch(console.error);
+    }
+
+    routeAfterSignIn(wasAuthenticated, activeScreenBeforeAuthUpdate);
     dismissSplash();
   } catch (error) {
     console.error(error);
@@ -1902,36 +2240,21 @@ async function initializeSupabaseAuth() {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'implicit'
+      // PKCE (the supabase-js default) serializes token refreshes across tabs
+      // via the Web Locks API. The previous 'implicit' flow did not, so two
+      // open tabs would refresh concurrently, rotate each other's refresh
+      // token, and one would get "Refresh token is not valid" → forced logout.
+      flowType: 'pkce'
     },
     db: {
       schema: 'app'
     }
   });
 
-  let sessionResult = await state.supabase.auth.getSession();
-
-  // Fallback: if Supabase didn't detect hash tokens (can happen on some mobile browsers),
-  // manually extract and set session from URL hash
-  if (!sessionResult.data?.session && window.location.hash.includes('access_token=')) {
-    try {
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token');
-      if (accessToken && refreshToken) {
-        const setResult = await state.supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken
-        });
-        if (!setResult.error) {
-          sessionResult = { data: { session: setResult.data.session }, error: null };
-          window.location.hash = '';
-        }
-      }
-    } catch (err) {
-      console.warn('Manual hash token extraction failed:', err);
-    }
-  }
+  // PKCE returns auth as ?code= (handled by detectSessionInUrl), never as a
+  // URL hash, so the old manual #access_token= fallback is now unreachable and
+  // has been removed.
+  const sessionResult = await state.supabase.auth.getSession();
 
   if (sessionResult.error) {
     setLoginStatus(`Unable to read auth session: ${sessionResult.error.message}`, 'status error');
@@ -2026,8 +2349,13 @@ function getDailyTaskStatusMeta(status) {
 }
 
 function getEmployeeNameById(employeeId) {
-  const row = state.employeeDirectory.find((entry) => entry.id === employeeId);
-  if (row?.full_name) return displayPersonName(row.full_name, 'Employee');
+  // Resolve via central helper (includes offboarded). Falls back to own profile
+  // if the id is the current user's, then to a generic 'Employee' label.
+  const row = lookupEmployee(employeeId);
+  if (row?.full_name) {
+    const display = displayPersonName(row.full_name, 'Employee');
+    return row._offboarded ? `${display} (offboarded)` : display;
+  }
   if (state.currentEmployeeId === employeeId) {
     return displayPersonName(state.employeeProfile?.full_name || DEFAULT_EMPLOYEE, 'Employee');
   }
@@ -2035,8 +2363,7 @@ function getEmployeeNameById(employeeId) {
 }
 
 function getEmployeeIdByName(fullName) {
-  const row = state.employeeDirectory.find((entry) => entry.full_name === fullName);
-  return row?.id || null;
+  return lookupEmployeeByFullName(fullName)?.id || null;
 }
 
 function getTaskViewEmployeeId() {
@@ -2062,6 +2389,7 @@ function dedupeSortedNames(values) {
 
 function taskClientNamesFromState() {
   const clientNames = state.clients
+    .filter((row) => row.is_active !== false)
     .map((row) => row.name)
     .filter((name) => normalizeClientNameKey(name) !== 'internal');
   return dedupeSortedNames(clientNames);
@@ -2087,12 +2415,14 @@ function renderPeopleDirectory() {
   if (!peopleDirectoryBody) return;
   peopleDirectoryBody.innerHTML = '';
   const showAccessRole = isLeadershipRole();
-  const colCount = showAccessRole ? 8 : 7;
+  const showUtilization = isLeadershipRole();
+  const colCount = (showAccessRole ? 1 : 0) + (showUtilization ? 1 : 0) + 7;
 
-  // Toggle Access Role header visibility
+  // Toggle Access Role and Utilization header visibility
   const directoryTable = peopleDirectoryBody.closest('table');
-  const accessRoleHeader = directoryTable?.querySelectorAll('thead th')?.[5];
-  if (accessRoleHeader) accessRoleHeader.classList.toggle('hidden', !showAccessRole);
+  const headers = directoryTable?.querySelectorAll('thead th');
+  if (headers?.[5]) headers[5].classList.toggle('hidden', !showAccessRole);
+  if (headers?.[6]) headers[6].classList.toggle('hidden', !showUtilization);
 
   if (!state.employeeDirectory.length) {
     const row = document.createElement('tr');
@@ -2109,7 +2439,7 @@ function renderPeopleDirectory() {
     empAllocTotals.set(a.employee_id, cur + (a.allocation_percent || 0));
   });
 
-  state.employeeDirectory.forEach((employee) => {
+  state.employeeDirectory.filter(e => !getHiddenEmployeeEmails().includes(normalizeEmail(e.email))).forEach((employee) => {
     const util = Math.min(Math.round(empAllocTotals.get(employee.id) || 0), 100);
     const displayName = displayPersonName(employee.full_name, 'Employee');
     const reportsTo = managerLabelForEmployee(employee);
@@ -2119,7 +2449,7 @@ function renderPeopleDirectory() {
     const actionCell = canEdit
       ? `
         <button class="ghost small" type="button" data-directory-action="edit" data-employee-id="${employee.id}" data-employee="${escapeHtml(employee.full_name)}">Edit</button>
-        <button class="ghost small" type="button" data-directory-action="deactivate" data-employee-id="${employee.id}" data-employee="${escapeHtml(employee.full_name)}">Deactivate</button>
+        <button class="ghost small" type="button" data-directory-action="offboard" data-employee-id="${employee.id}" data-employee="${escapeHtml(employee.full_name)}">Offboard</button>
       `
       : '<span class="mini-meta">View only</span>';
     const row = document.createElement('tr');
@@ -2130,7 +2460,7 @@ function renderPeopleDirectory() {
       <td data-label="Reports To">${escapeHtml(reportsTo)}</td>
       <td data-label="Type">${employee.employment_type === 'fractional' ? 'Fractional' : 'Full-time'}</td>
       ${showAccessRole ? `<td data-label="Access">${accessLabel}</td>` : ''}
-      <td data-label="Utilization">${util}%</td>
+      ${showUtilization ? `<td data-label="Utilization">${util}%</td>` : ''}
       <td data-label="">${actionCell}</td>
     `;
     peopleDirectoryBody.appendChild(row);
@@ -2146,7 +2476,7 @@ function renderDeactivatedEmployees() {
   if (!panel || !body) return;
   body.innerHTML = '';
 
-  if (!isLeadershipRole() || !state.inactiveEmployees.length) {
+  if (!isLeadershipRole() || !state.inactiveEmployees?.length) {
     panel.classList.add('hidden');
     return;
   }
@@ -2170,10 +2500,10 @@ document.getElementById('deactivatedEmployeesPanel')?.addEventListener('click', 
   if (!btn) return;
   const id = btn.dataset.reactivateId;
   const name = btn.dataset.reactivateName;
-  if (!window.confirm(`Reactivate ${name}?`)) return;
+  if (!await colonyConfirm(`Reactivate ${name}?`)) return;
   const result = await state.supabase.from('employees').update({ is_active: true }).eq('id', id);
   if (result.error) {
-    window.alert(`Unable to reactivate: ${result.error.message}`);
+    colonyAlert(`Unable to reactivate: ${result.error.message}`);
     return;
   }
   await loadEmployeeDirectoryFromSupabase();
@@ -2274,11 +2604,11 @@ async function deactivateDirectoryEmployee(employeeId, employeeName = 'Employee'
 
   const displayName = displayPersonName(employeeName, 'Employee');
   if (employeeId === state.currentEmployeeId) {
-    window.alert('You cannot deactivate your own account.');
+    colonyAlert('You cannot deactivate your own account.');
     return;
   }
 
-  const confirmDeactivate = window.confirm(`Deactivate ${displayName}?`);
+  const confirmDeactivate = await colonyConfirm(`Deactivate ${displayName}?`);
   if (!confirmDeactivate) return;
 
   if (!state.supabase || !state.isAuthenticated) {
@@ -2292,7 +2622,7 @@ async function deactivateDirectoryEmployee(employeeId, employeeName = 'Employee'
 
   const result = await state.supabase.from('employees').update({ is_active: false }).eq('id', employeeId);
   if (result.error) {
-    window.alert(`Unable to deactivate ${displayName}: ${result.error.message}`);
+    colonyAlert(`Unable to deactivate ${displayName}: ${result.error.message}`);
     return;
   }
 
@@ -2307,6 +2637,201 @@ async function deactivateDirectoryEmployee(employeeId, employeeName = 'Employee'
   await loadDailyTasksFromSupabase();
   await loadWeeklyAllocationsFromSupabase();
   setSelectedEmployee(state.employeeProfile?.full_name || DEFAULT_EMPLOYEE);
+}
+
+// ─── Offboarding flow ───────────────────────────────────────────────
+function ensureOffboardModalStyles() {
+  if (document.getElementById('offboardModalStyles')) return;
+  const s = document.createElement('style');
+  s.id = 'offboardModalStyles';
+  s.textContent = `
+    .ofb-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+    .ofb-modal{background:var(--panel-bg,#161b26);color:var(--text,#e6ebf5);border:1px solid var(--panel-border,#262d3d);border-radius:14px;max-width:680px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+    .ofb-head{padding:18px 22px;border-bottom:1px solid var(--panel-border,#262d3d)}
+    .ofb-head h3{margin:0;font-size:18px}
+    .ofb-head .ofb-sub{font-size:12px;color:var(--text-muted,#8b95a8);margin-top:4px}
+    .ofb-body{padding:16px 22px;overflow-y:auto;flex:1}
+    .ofb-section{margin-bottom:14px;padding:12px 14px;border:1px solid var(--panel-border,#262d3d);border-radius:10px;background:var(--panel-bg-alt,#1a1f2c)}
+    .ofb-section h4{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted,#8b95a8)}
+    .ofb-section .ofb-count{font-size:20px;font-weight:600}
+    .ofb-section ul{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--text-muted,#8b95a8)}
+    .ofb-reassign-row{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+    .ofb-reassign-row .ofb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ofb-reassign-row select{flex:1;min-width:160px}
+    .ofb-empty{color:var(--text-muted,#8b95a8);font-size:13px}
+    .ofb-foot{padding:14px 22px;border-top:1px solid var(--panel-border,#262d3d);display:flex;gap:10px;justify-content:flex-end;align-items:center}
+    .ofb-btn{padding:8px 14px;border-radius:8px;border:1px solid var(--panel-border,#262d3d);background:transparent;color:var(--text,#e6ebf5);cursor:pointer;font-size:13px}
+    .ofb-btn.danger{background:#c0392b;border-color:#c0392b;color:#fff;font-weight:600}
+    .ofb-btn:disabled{opacity:.45;cursor:not-allowed}
+    .ofb-status{font-size:12px;color:var(--text-muted,#8b95a8);margin-right:auto}
+  `;
+  document.head.appendChild(s);
+}
+
+async function openOffboardEmployeeFlow(employeeId, employeeName) {
+  if (!employeeId || !isLeadershipRole()) return;
+  if (!state.supabase) { colonyAlert('Not connected to database.'); return; }
+  if (employeeId === state.currentEmployeeId) {
+    colonyAlert('You cannot offboard your own account.');
+    return;
+  }
+  ensureOffboardModalStyles();
+
+  const today = new Date().toISOString().slice(0, 10);
+  // current week monday in local
+  const wkStart = (typeof getCurrentWeekStartIso === 'function') ? getCurrentWeekStartIso() : today;
+
+  // Pre-flight scan
+  const [tasksRes, leaveRes, allocRes, standingRes, onbRes, clientsRes, dealsRes] = await Promise.all([
+    state.supabase.from('daily_tasks').select('id,task_title,status').eq('employee_id', employeeId).eq('status', 'in_progress'),
+    state.supabase.from('leave_requests').select('id,start_date,end_date,status').eq('employee_id', employeeId).gte('end_date', today).in('status', ['approved', 'pending']),
+    state.supabase.from('allocations').select('id,period_start').eq('employee_id', employeeId).gte('period_start', wkStart),
+    state.supabase.from('client_standing_allocations').select('id').eq('employee_id', employeeId),
+    state.supabase.from('onboarding_checklists').select('id,status').eq('employee_id', employeeId).eq('status', 'active'),
+    state.supabase.from('clients').select('id,name').eq('account_owner_employee_id', employeeId),
+    state.supabase.from('deals').select('id,deal_name').eq('poc_employee_id', employeeId)
+  ]);
+
+  const errors = [tasksRes, leaveRes, allocRes, standingRes, onbRes, clientsRes, dealsRes].filter(r => r.error);
+  if (errors.length) {
+    console.error('Offboard scan errors', errors);
+    colonyAlert('Could not load offboarding data: ' + errors[0].error.message);
+    return;
+  }
+
+  const data = {
+    tasks: tasksRes.data || [],
+    leave: leaveRes.data || [],
+    allocs: allocRes.data || [],
+    standing: standingRes.data || [],
+    onboarding: onbRes.data || [],
+    clients: clientsRes.data || [],
+    deals: dealsRes.data || []
+  };
+
+  // Eligible reassignment targets (active employees, not the one being offboarded)
+  const candidates = (state.employeeDirectory || [])
+    .filter(e => e.is_active !== false && e.id !== employeeId)
+    .map(e => ({ id: e.id, name: e.full_name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Build modal
+  const backdrop = document.createElement('div');
+  backdrop.className = 'ofb-backdrop';
+  const reassignSelect = (kind, item, label) =>
+    `<div class="ofb-reassign-row"><span class="ofb-name">${escapeHtml(label)}</span><select data-ofb-reassign="${kind}" data-id="${escapeHtml(item.id)}"><option value="">— Reassign to —</option>${candidates.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select></div>`;
+
+  const sec = (title, count, body) =>
+    `<div class="ofb-section"><h4>${title}</h4><div class="ofb-count">${count}</div>${body || ''}</div>`;
+
+  const tasksBody = data.tasks.length
+    ? `<ul>${data.tasks.slice(0, 6).map(t => `<li>${escapeHtml(t.task_title || 'Untitled')}</li>`).join('')}${data.tasks.length > 6 ? `<li>+${data.tasks.length - 6} more</li>` : ''}</ul>`
+    : '';
+  const leaveBody = data.leave.length ? `<ul>${data.leave.map(l => `<li>${escapeHtml(l.start_date)} → ${escapeHtml(l.end_date)} (${escapeHtml(l.status)})</li>`).join('')}</ul>` : '';
+  const clientsBody = data.clients.length
+    ? data.clients.map(c => reassignSelect('client', c, c.name || 'Untitled client')).join('')
+    : '<div class="ofb-empty">None</div>';
+  const dealsBody = data.deals.length
+    ? data.deals.map(d => reassignSelect('deal', d, d.deal_name || 'Untitled deal')).join('')
+    : '<div class="ofb-empty">None</div>';
+
+  backdrop.innerHTML = `
+    <div class="ofb-modal" role="dialog" aria-modal="true">
+      <div class="ofb-head">
+        <h3>Offboard ${escapeHtml(employeeName)}</h3>
+        <div class="ofb-sub">Review what will be archived, reassigned, or cancelled. This cannot be undone from here.</div>
+      </div>
+      <div class="ofb-body">
+        ${sec('Open tasks → archive', data.tasks.length, tasksBody)}
+        ${sec('Future leave → cancel', data.leave.length, leaveBody)}
+        ${sec('This week + future allocations → remove', data.allocs.length, '')}
+        ${sec('Standing client allocations → remove', data.standing.length, '')}
+        ${sec('Active onboarding checklists → delete', data.onboarding.length, '')}
+        <div class="ofb-section"><h4>Owned clients → reassign</h4>${clientsBody}</div>
+        <div class="ofb-section"><h4>Owned deals → reassign</h4>${dealsBody}</div>
+      </div>
+      <div class="ofb-foot">
+        <span class="ofb-status" data-ofb-status></span>
+        <button class="ofb-btn" data-ofb-cancel>Cancel</button>
+        <button class="ofb-btn danger" data-ofb-confirm ${(data.clients.length || data.deals.length) ? 'disabled' : ''}>Confirm Offboard</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+
+  const confirmBtn = backdrop.querySelector('[data-ofb-confirm]');
+  const statusEl = backdrop.querySelector('[data-ofb-status]');
+  const close = () => backdrop.remove();
+
+  const validateReassignments = () => {
+    const selects = backdrop.querySelectorAll('select[data-ofb-reassign]');
+    const allFilled = Array.from(selects).every(s => s.value);
+    confirmBtn.disabled = !allFilled;
+  };
+  backdrop.addEventListener('change', (e) => {
+    if (e.target.matches('select[data-ofb-reassign]')) validateReassignments();
+  });
+
+  backdrop.querySelector('[data-ofb-cancel]').addEventListener('click', close);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+
+  confirmBtn.addEventListener('click', async () => {
+    confirmBtn.disabled = true;
+    statusEl.textContent = 'Working…';
+
+    try {
+      // Build reassignment maps
+      const clientReassign = {};
+      const dealReassign = {};
+      backdrop.querySelectorAll('select[data-ofb-reassign="client"]').forEach(s => { clientReassign[s.dataset.id] = s.value; });
+      backdrop.querySelectorAll('select[data-ofb-reassign="deal"]').forEach(s => { dealReassign[s.dataset.id] = s.value; });
+
+      const ops = [];
+      if (data.tasks.length) {
+        ops.push(state.supabase.from('daily_tasks').update({ status: 'archived' }).in('id', data.tasks.map(t => t.id)));
+      }
+      if (data.leave.length) {
+        ops.push(state.supabase.from('leave_requests').update({ status: 'cancelled' }).in('id', data.leave.map(l => l.id)));
+      }
+      if (data.allocs.length) {
+        ops.push(state.supabase.from('allocations').delete().in('id', data.allocs.map(a => a.id)));
+      }
+      if (data.standing.length) {
+        ops.push(state.supabase.from('client_standing_allocations').delete().in('id', data.standing.map(a => a.id)));
+      }
+      if (data.onboarding.length) {
+        ops.push(state.supabase.from('onboarding_checklists').delete().in('id', data.onboarding.map(o => o.id)));
+      }
+      for (const [cid, newOwner] of Object.entries(clientReassign)) {
+        ops.push(state.supabase.from('clients').update({ account_owner_employee_id: newOwner }).eq('id', cid));
+      }
+      for (const [did, newOwner] of Object.entries(dealReassign)) {
+        ops.push(state.supabase.from('deals').update({ poc_employee_id: newOwner }).eq('id', did));
+      }
+
+      const results = await Promise.all(ops);
+      const failed = results.find(r => r && r.error);
+      if (failed) throw failed.error;
+
+      // Finally flip is_active
+      const flip = await state.supabase.from('employees').update({ is_active: false }).eq('id', employeeId);
+      if (flip.error) throw flip.error;
+
+      statusEl.textContent = 'Done.';
+      // Refresh app state
+      await loadEmployeeDirectoryFromSupabase();
+      try { await loadDailyTasksFromSupabase(); } catch (_) {}
+      try { await loadWeeklyAllocationsFromSupabase(); } catch (_) {}
+      try { await loadClientsFromSupabase(); } catch (_) {}
+      try { await loadDealsFromSupabase(); } catch (_) {}
+      close();
+    } catch (err) {
+      console.error('Offboard failed', err);
+      statusEl.textContent = '';
+      colonyAlert('Offboarding failed: ' + (err.message || err));
+      confirmBtn.disabled = false;
+    }
+  });
 }
 
 if (peopleDirectoryBody) {
@@ -2325,10 +2850,18 @@ if (peopleDirectoryBody) {
       return;
     }
 
+    if (action === 'offboard') {
+      openOffboardEmployeeFlow(employeeId, employeeName).catch((error) => {
+        console.error(error);
+        colonyAlert(`Unable to start offboarding: ${error.message}`);
+      });
+      return;
+    }
+
     if (action === 'deactivate') {
       deactivateDirectoryEmployee(employeeId, employeeName).catch((error) => {
         console.error(error);
-        window.alert(`Unable to deactivate employee: ${error.message}`);
+        colonyAlert(`Unable to deactivate employee: ${error.message}`);
       });
     }
   });
@@ -2366,11 +2899,6 @@ function filterDirectoryBySearch(query) {
   });
 }
 
-function normalizeAccessLevel(role) {
-  if (role === 'admin' || role === 'leadership' || role === 'employee') return role;
-  return 'employee';
-}
-
 function displayNameFromEmail(email) {
   const base = String(email || '').split('@')[0] || 'Employee';
   return base
@@ -2395,6 +2923,411 @@ function fullAccessRoleOptionsMarkup(selectedRole) {
   `;
 }
 
+// ── Public Holidays admin (Admin Settings) ──
+const holidaysAdminTableBody = document.getElementById('holidaysAdminTableBody');
+
+function setHolidaysNotice(msg = '', cls = 'mini-meta') {
+  const el = document.getElementById('holidaysAdminNotice');
+  if (!el) return;
+  el.className = cls;
+  el.textContent = msg;
+}
+
+function renderHolidaysAdmin() {
+  if (!holidaysAdminTableBody) return;
+  const list = getPublicHolidays();
+  const canEdit = isLeadershipRole();
+  if (!list.length) {
+    holidaysAdminTableBody.innerHTML = '<tr><td colspan="3">No holidays configured.</td></tr>';
+    return;
+  }
+  const todayStr = toISODateLocal(new Date());
+  holidaysAdminTableBody.innerHTML = list.map(h => {
+    const past = h.date < todayStr;
+    const label = formatDateForLabel(parseIsoDateLocal(h.date) || h.date);
+    return `<tr${past ? ' class="mini-meta"' : ''}>
+      <td data-label="Date">${escapeHtml(label)}</td>
+      <td data-label="Holiday">${escapeHtml(h.name)}</td>
+      <td data-label="Action">${canEdit ? `<button class="ghost small danger-text" data-remove-holiday="${escapeHtml(h.date)}" type="button">Remove</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+  // Hide the add form for non-editors
+  const addBtn = document.getElementById('addHolidayBtn');
+  if (addBtn) addBtn.closest('.editor-bar')?.classList.toggle('hidden', !canEdit);
+}
+
+async function addHoliday() {
+  if (!state.supabase || !isLeadershipRole()) return;
+  const dateEl = document.getElementById('newHolidayDate');
+  const nameEl = document.getElementById('newHolidayName');
+  const date = (dateEl?.value || '').trim();
+  const name = (nameEl?.value || '').trim();
+  if (!date || !name) { setHolidaysNotice('Pick a date and enter a name.', 'mini-meta warn'); return; }
+  setHolidaysNotice('Saving…');
+  const { error } = await state.supabase
+    .from('public_holidays')
+    .upsert({ holiday_date: date, name }, { onConflict: 'holiday_date' })
+    .select();
+  if (error) { setHolidaysNotice('Could not add: ' + error.message, 'mini-meta warn'); return; }
+  if (dateEl) dateEl.value = '';
+  if (nameEl) nameEl.value = '';
+  await loadPublicHolidaysFromSupabase();
+  renderHolidaysAdmin();
+  setHolidaysNotice(`✓ Added ${name}.`);
+}
+
+async function removeHoliday(dateStr) {
+  if (!state.supabase || !isLeadershipRole() || !dateStr) return;
+  const target = getPublicHolidays().find(h => h.date === dateStr);
+  if (!await colonyConfirm(`Remove "${target?.name || dateStr}" from the holiday list?`, { title: 'Remove holiday', confirmLabel: 'Remove', danger: true })) return;
+  setHolidaysNotice('Removing…');
+  // .select() to surface silent RLS failures
+  const { data, error } = await state.supabase
+    .from('public_holidays')
+    .delete()
+    .eq('holiday_date', dateStr)
+    .select();
+  if (error) { setHolidaysNotice('Could not remove: ' + error.message, 'mini-meta warn'); return; }
+  if (!data || !data.length) { setHolidaysNotice('Nothing removed (permission?).', 'mini-meta warn'); return; }
+  await loadPublicHolidaysFromSupabase();
+  renderHolidaysAdmin();
+  setHolidaysNotice(`✓ Removed.`);
+}
+
+if (document.getElementById('addHolidayBtn')) {
+  document.getElementById('addHolidayBtn').addEventListener('click', () => addHoliday().catch(console.error));
+}
+if (holidaysAdminTableBody) {
+  holidaysAdminTableBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-holiday]');
+    if (btn) removeHoliday(btn.dataset.removeHoliday).catch(console.error);
+  });
+}
+
+// ── Operational config admin (app.app_config, superadmin-only) ──
+// Generic editor for the six DB-backed lists/maps. Each `get` reads the
+// EFFECTIVE value (DB override or the in-code fallback), so editing a key that
+// has no override yet promotes the current default into the DB plus the change.
+// Clearing a key's last entry leaves it empty in the DB and the accessor falls
+// back to the built-in default (a wipe can't silently empty a visibility list).
+const APP_CONFIG_FIELDS = [
+  { key: 'invoice_viewer_emails',   kind: 'list', get: getInvoiceViewerEmails,  label: 'Invoice viewers',
+    help: 'Extra people who can open the Invoice Center beyond finance/leadership.' },
+  { key: 'invoice_excluded_emails', kind: 'list', get: getInvoiceExcludedEmails, label: 'Invoice-excluded',
+    help: 'Hidden from the invoice checklist and their own invoice upload panel.' },
+  { key: 'hidden_employee_emails',  kind: 'list', get: getHiddenEmployeeEmails,  label: 'Hidden employees',
+    help: 'Keep their access but hide them from directory, team and exec views.' },
+  { key: 'deal_flow_extra_emails',  kind: 'list', get: getDealFlowExtraEmails,   label: 'Deal-flow viewers',
+    help: 'Non-leadership people allowed to see the Deal Flow board.' },
+  { key: 'team_manager_by_team',    kind: 'map',  get: getTeamManagerMap,        label: 'Team approver',
+    keyLabel: 'Team', valLabel: 'Approver email', keyOptions: ['AM', 'Art', 'Copy', 'Video', 'Strategy'],
+    help: 'Department → leave/allocation approver when an employee has no explicit manager.' },
+  { key: 'direct_manager_by_email', kind: 'map',  get: getDirectManagerMap,      label: 'Direct manager',
+    keyLabel: 'Employee email', valLabel: 'Manager email',
+    help: 'Explicit employee → manager overrides (take precedence over the team map).' },
+  { key: 'analytics_personas_by_client', kind: 'json',
+    get: () => getConfigMap('analytics_personas_by_client', ANALYTICS_PERSONAS_BY_CLIENT),
+    label: 'Analytics target personas',
+    help: 'Per-client target audience for Audience Intelligence highlighting, keyed by lowercased client name. Each entry: industries, industriesLabel, jobFunctions, jobFunctionsLabel, decisionMakerSeniority, seniorityLabel. Clients without an entry get plain demographic bars.' },
+];
+
+const appConfigEditors = document.getElementById('appConfigEditors');
+
+function setAppConfigNotice(msg = '', cls = 'mini-meta') {
+  const el = document.getElementById('appConfigNotice');
+  if (!el) return;
+  el.className = cls;
+  el.textContent = msg;
+}
+
+function renderAppConfigAdmin() {
+  if (!appConfigEditors) return;
+  if (!isSuperadminUser()) { appConfigEditors.innerHTML = '<p class="mini-meta">Superadmin only.</p>'; return; }
+  appConfigEditors.innerHTML = APP_CONFIG_FIELDS.map(field => {
+    const stored = state.appConfig && state.appConfig[field.key];
+    const isCustom = field.kind === 'list'
+      ? (Array.isArray(stored) && stored.length > 0)
+      : (stored && typeof stored === 'object' && Object.keys(stored).length > 0);
+    const badge = isCustom
+      ? '<span class="mini-meta" style="color:var(--accent, #e8590c)">customised</span>'
+      : '<span class="mini-meta">built-in default</span>';
+    const head = `<div class="config-block-head"><h4>${escapeHtml(field.label)}</h4> ${badge}</div>
+      <p class="mini-meta">${escapeHtml(field.help)}</p>`;
+
+    if (field.kind === 'json') {
+      const pretty = JSON.stringify(field.get(), null, 2);
+      return `<div class="config-block">${head}
+        <textarea data-cfg-json-input="${escapeHtml(field.key)}" rows="12" spellcheck="false" style="width:100%;font-family:var(--mono, monospace);font-size:12px">${escapeHtml(pretty)}</textarea>
+        <div class="editor-bar action-row">
+          <button class="primary" type="button" data-cfg-save-json="${escapeHtml(field.key)}">Save JSON</button>
+        </div></div>`;
+    }
+
+    if (field.kind === 'list') {
+      const emails = field.get();
+      const rows = emails.length
+        ? emails.map(e => `<tr>
+            <td data-label="Email">${escapeHtml(e)}</td>
+            <td data-label="Action"><button class="ghost small danger-text" type="button" data-cfg-remove-list="${escapeHtml(field.key)}" data-val="${escapeHtml(e)}">Remove</button></td>
+          </tr>`).join('')
+        : '<tr><td colspan="2" class="mini-meta">Empty — nobody listed.</td></tr>';
+      return `<div class="config-block">${head}
+        <table class="m-card-table"><tbody>${rows}</tbody></table>
+        <div class="editor-bar action-row">
+          <input type="email" data-cfg-add-input="${escapeHtml(field.key)}" placeholder="user@youragency.com" aria-label="${escapeHtml(field.label)} email">
+          <button class="primary" type="button" data-cfg-add-list="${escapeHtml(field.key)}">Add</button>
+        </div></div>`;
+    }
+
+    const map = field.get();
+    const keys = Object.keys(map).sort();
+    const rows = keys.length
+      ? keys.map(k => `<tr>
+          <td data-label="${escapeHtml(field.keyLabel)}">${escapeHtml(k)}</td>
+          <td data-label="${escapeHtml(field.valLabel)}">${escapeHtml(map[k])}</td>
+          <td data-label="Action"><button class="ghost small danger-text" type="button" data-cfg-remove-map="${escapeHtml(field.key)}" data-mapkey="${escapeHtml(k)}">Remove</button></td>
+        </tr>`).join('')
+      : '<tr><td colspan="3" class="mini-meta">Empty — no mappings.</td></tr>';
+    const keyControl = field.keyOptions
+      ? `<select data-cfg-mapkey-input="${escapeHtml(field.key)}" aria-label="${escapeHtml(field.keyLabel)}">${field.keyOptions.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select>`
+      : `<input type="email" data-cfg-mapkey-input="${escapeHtml(field.key)}" placeholder="${escapeHtml(field.keyLabel)}" aria-label="${escapeHtml(field.keyLabel)}">`;
+    return `<div class="config-block">${head}
+      <table class="m-card-table">
+        <thead><tr><th>${escapeHtml(field.keyLabel)}</th><th>${escapeHtml(field.valLabel)}</th><th>Action</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="editor-bar action-row">
+        ${keyControl}
+        <input type="email" data-cfg-mapval-input="${escapeHtml(field.key)}" placeholder="${escapeHtml(field.valLabel)}" aria-label="${escapeHtml(field.valLabel)}">
+        <button class="primary" type="button" data-cfg-add-map="${escapeHtml(field.key)}">Set</button>
+      </div></div>`;
+  }).join('');
+}
+
+async function saveAppConfigKey(key, value) {
+  if (!state.supabase || !isSuperadminUser()) { setAppConfigNotice('Superadmin only.', 'mini-meta warn'); return false; }
+  setAppConfigNotice('Saving…');
+  const { error } = await state.supabase
+    .from('app_config')
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    .select();
+  if (error) { setAppConfigNotice('Could not save: ' + error.message, 'mini-meta warn'); return false; }
+  await loadAppConfig();
+  renderAppConfigAdmin();
+  return true;
+}
+
+function cfgFieldByKey(key) { return APP_CONFIG_FIELDS.find(f => f.key === key); }
+
+async function addConfigListEntry(key) {
+  const field = cfgFieldByKey(key); if (!field) return;
+  const input = appConfigEditors.querySelector(`[data-cfg-add-input="${key}"]`);
+  const email = normalizeEmail(input?.value || '');
+  if (!email) { setAppConfigNotice('Enter an email.', 'mini-meta warn'); return; }
+  if (!email.endsWith(ANT_DOMAIN)) { setAppConfigNotice('Must be an @youragency.com email.', 'mini-meta warn'); return; }
+  const current = field.get().map(normalizeEmail);
+  if (current.includes(email)) { setAppConfigNotice(`${email} is already listed.`, 'mini-meta warn'); return; }
+  if (await saveAppConfigKey(key, current.concat(email))) setAppConfigNotice(`✓ Added ${email} to ${field.label}.`);
+}
+
+async function removeConfigListEntry(key, email) {
+  const field = cfgFieldByKey(key); if (!field) return;
+  if (!await colonyConfirm(`Remove ${email} from ${field.label}?`, { title: 'Remove entry', confirmLabel: 'Remove', danger: true })) return;
+  const next = field.get().map(normalizeEmail).filter(e => e !== normalizeEmail(email));
+  if (await saveAppConfigKey(key, next)) {
+    setAppConfigNotice(next.length ? `✓ Removed ${email}.` : `✓ Removed ${email}. List is now empty.`);
+  }
+}
+
+async function setConfigMapEntry(key) {
+  const field = cfgFieldByKey(key); if (!field) return;
+  const keyInput = appConfigEditors.querySelector(`[data-cfg-mapkey-input="${key}"]`);
+  const valInput = appConfigEditors.querySelector(`[data-cfg-mapval-input="${key}"]`);
+  const rawKey = (keyInput?.value || '').trim();
+  const val = normalizeEmail(valInput?.value || '');
+  // Employee-email key is normalised; team key keeps its label casing.
+  const mapKey = field.keyOptions ? rawKey : normalizeEmail(rawKey);
+  if (!mapKey) { setAppConfigNotice(`Enter a ${field.keyLabel.toLowerCase()}.`, 'mini-meta warn'); return; }
+  if (!field.keyOptions && !mapKey.endsWith(ANT_DOMAIN)) { setAppConfigNotice(`${field.keyLabel} must be an @youragency.com email.`, 'mini-meta warn'); return; }
+  if (!val) { setAppConfigNotice(`Enter a ${field.valLabel.toLowerCase()}.`, 'mini-meta warn'); return; }
+  if (!val.endsWith(ANT_DOMAIN)) { setAppConfigNotice(`${field.valLabel} must be an @youragency.com email.`, 'mini-meta warn'); return; }
+  const next = Object.assign({}, field.get(), { [mapKey]: val });
+  if (await saveAppConfigKey(key, next)) {
+    if (valInput) valInput.value = '';
+    setAppConfigNotice(`✓ ${field.label}: ${mapKey} → ${val}.`);
+  }
+}
+
+async function removeConfigMapEntry(key, mapKey) {
+  const field = cfgFieldByKey(key); if (!field) return;
+  if (!await colonyConfirm(`Remove the ${field.label} mapping for ${mapKey}?`, { title: 'Remove mapping', confirmLabel: 'Remove', danger: true })) return;
+  const next = Object.assign({}, field.get());
+  delete next[mapKey];
+  if (await saveAppConfigKey(key, next)) setAppConfigNotice(`✓ Removed mapping for ${mapKey}.`);
+}
+
+if (appConfigEditors) {
+  appConfigEditors.addEventListener('click', (e) => {
+    const addList = e.target.closest('[data-cfg-add-list]');
+    if (addList) { addConfigListEntry(addList.dataset.cfgAddList).catch(console.error); return; }
+    const rmList = e.target.closest('[data-cfg-remove-list]');
+    if (rmList) { removeConfigListEntry(rmList.dataset.cfgRemoveList, rmList.dataset.val).catch(console.error); return; }
+    const addMap = e.target.closest('[data-cfg-add-map]');
+    if (addMap) { setConfigMapEntry(addMap.dataset.cfgAddMap).catch(console.error); return; }
+    const rmMap = e.target.closest('[data-cfg-remove-map]');
+    if (rmMap) { removeConfigMapEntry(rmMap.dataset.cfgRemoveMap, rmMap.dataset.mapkey).catch(console.error); return; }
+    const saveJson = e.target.closest('[data-cfg-save-json]');
+    if (saveJson) {
+      const key = saveJson.dataset.cfgSaveJson;
+      const ta = appConfigEditors.querySelector(`[data-cfg-json-input="${key}"]`);
+      let parsed;
+      try { parsed = JSON.parse(ta?.value || ''); } catch (err) {
+        setAppConfigNotice(`Invalid JSON: ${err.message}`, 'mini-meta warn');
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setAppConfigNotice('Expected a JSON object (client name → persona).', 'mini-meta warn');
+        return;
+      }
+      saveAppConfigKey(key, parsed).then(ok => { if (ok) setAppConfigNotice('Saved.'); }).catch(console.error);
+      return;
+    }
+  });
+}
+
+// ── Scheduled jobs health (Admin Settings) ──
+// Reads cron_heartbeat rows (written by withCronHeartbeat in every scheduled
+// function) so a dead scheduler is visible here within a day — the Apr–Jun
+// 2026 outage went unnoticed for two months because nothing surfaced it.
+const CRON_JOBS = [
+  { fn: 'daily-reminders',           label: 'Daily reminders (digest + birthdays)',   cadence: 'daily',   schedule: '10:00 IST daily' },
+  { fn: 'task-nudge',                label: 'Task nudge (untouched tasklists)',       cadence: 'daily',   schedule: '11:00 IST weekdays' },
+  { fn: 'invoice-reminder',          label: 'Invoice upload reminders',               cadence: 'monthly', schedule: '10:00 IST, 25th → month-end' },
+  { fn: 'analytics-upload-reminder', label: 'Analytics upload reminder',              cadence: 'weekly',  schedule: '10:00 IST Mondays' },
+  { fn: 'policy-update-reminder',    label: 'Policy review reminder',                 cadence: 'weekly',  schedule: '10:00 IST Mondays' }
+];
+
+async function loadCronHealth() {
+  if (!state.supabase || !isLeadershipRole()) return null;
+  const { data, error } = await state.supabase
+    .from('notification_log')
+    .select('subject, payload, status, created_at')
+    .eq('kind', 'cron_heartbeat')
+    .order('created_at', { ascending: false })
+    .limit(60);
+  if (error) { console.warn('Cron health load failed:', error.message); return null; }
+  const latestByFn = new Map();
+  (data || []).forEach(row => {
+    const fn = row.payload?.function;
+    if (fn && !latestByFn.has(fn)) latestByFn.set(fn, row);
+  });
+  return latestByFn;
+}
+
+function renderCronHealthAdmin(latestByFn) {
+  const body = document.getElementById('cronHealthTableBody');
+  if (!body) return;
+  const CHIP = {
+    ok:      '<span class="feed-bullet-tag shipped">ok</span>',
+    late:    '<span class="feed-bullet-tag new">late</span>',
+    dead:    '<span class="feed-bullet-tag new">DEAD</span>',
+    error:   '<span class="feed-bullet-tag new">errors</span>',
+    unknown: '<span class="mini-meta">no heartbeat yet</span>'
+  };
+  body.innerHTML = CRON_JOBS.map(job => {
+    const row = latestByFn ? latestByFn.get(job.fn) : null;
+    let health = cronHealthStatus(row?.created_at || null, job.cadence);
+    if (health === 'ok' && row?.status === 'error') health = 'error';
+    const lastRun = row ? formatTimestamp(new Date(row.created_at)) : 'never (heartbeats began 10 Jun 2026)';
+    const note = row && row.status === 'error' ? escapeHtml(row.subject) : escapeHtml(job.schedule);
+    return `<tr>
+      <td data-label="Job">${escapeHtml(job.label)}</td>
+      <td data-label="Last run">${escapeHtml(lastRun)}</td>
+      <td data-label="Status">${CHIP[health] || CHIP.unknown}</td>
+      <td data-label="Schedule" class="mini-meta">${note}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Enforced Access overrides admin (Admin Settings, superadmin-only) ──
+const accessOverridesTableBody = document.getElementById('accessOverridesTableBody');
+
+function setOverridesNotice(msg = '', cls = 'mini-meta') {
+  const el = document.getElementById('accessOverridesNotice');
+  if (!el) return;
+  el.className = cls;
+  el.textContent = msg;
+}
+
+function renderAccessOverridesAdmin() {
+  if (!accessOverridesTableBody) return;
+  const map = getEnforcedAccessMap();
+  const emails = Object.keys(map).sort();
+  const canEdit = isSuperadminUser();
+  if (!emails.length) {
+    accessOverridesTableBody.innerHTML = '<tr><td colspan="3">No enforced access pins.</td></tr>';
+    return;
+  }
+  accessOverridesTableBody.innerHTML = emails.map(email => {
+    const role = map[email];
+    const isSelf = isSuperadminEmail(email);
+    return `<tr>
+      <td data-label="Email">${escapeHtml(email)}</td>
+      <td data-label="Pinned Role">${escapeHtml(role.charAt(0).toUpperCase() + role.slice(1))}</td>
+      <td data-label="Action">${(canEdit && !isSelf) ? `<button class="ghost small danger-text" data-remove-override="${escapeHtml(email)}" type="button">Remove</button>` : (isSelf ? '<span class="mini-meta">superadmin</span>' : '')}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function addAccessOverride() {
+  if (!state.supabase || !isSuperadminUser()) return;
+  const emailEl = document.getElementById('newOverrideEmail');
+  const roleEl = document.getElementById('newOverrideRole');
+  const email = normalizeEmail(emailEl?.value || '');
+  const role = roleEl?.value || 'leadership';
+  if (!email) { setOverridesNotice('Enter an email.', 'mini-meta warn'); return; }
+  if (!email.endsWith(ANT_DOMAIN)) { setOverridesNotice('Must be an @youragency.com email.', 'mini-meta warn'); return; }
+  setOverridesNotice('Saving…');
+  const { error } = await state.supabase
+    .from('access_overrides')
+    .upsert({ email, role }, { onConflict: 'email' })
+    .select();
+  if (error) { setOverridesNotice('Could not save: ' + error.message, 'mini-meta warn'); return; }
+  if (emailEl) emailEl.value = '';
+  await loadAccessOverrides();
+  renderAccessOverridesAdmin();
+  renderFullAccessUsers();
+  setOverridesNotice(`✓ Pinned ${email} to ${role}. Takes effect on their next login.`);
+}
+
+async function removeAccessOverride(email) {
+  if (!state.supabase || !isSuperadminUser() || !email) return;
+  if (isSuperadminEmail(email)) { setOverridesNotice('The superadmin pin cannot be removed.', 'mini-meta warn'); return; }
+  if (!await colonyConfirm(`Remove the enforced-access pin for ${email}? Their role will then follow the DB ("Save Roles") instead.`, { title: 'Remove access pin', confirmLabel: 'Remove', danger: true })) return;
+  setOverridesNotice('Removing…');
+  const { data, error } = await state.supabase
+    .from('access_overrides')
+    .delete()
+    .eq('email', email)
+    .select();
+  if (error) { setOverridesNotice('Could not remove: ' + error.message, 'mini-meta warn'); return; }
+  if (!data || !data.length) { setOverridesNotice('Nothing removed (permission?).', 'mini-meta warn'); return; }
+  await loadAccessOverrides();
+  renderAccessOverridesAdmin();
+  renderFullAccessUsers();
+  setOverridesNotice('✓ Pin removed.');
+}
+
+if (document.getElementById('addOverrideBtn')) {
+  document.getElementById('addOverrideBtn').addEventListener('click', () => addAccessOverride().catch(console.error));
+}
+if (accessOverridesTableBody) {
+  accessOverridesTableBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-override]');
+    if (btn) removeAccessOverride(btn.dataset.removeOverride).catch(console.error);
+  });
+}
+
 function renderFullAccessUsers() {
   if (!fullAccessTableBody) return;
   const canManage = canManageAccessRoles();
@@ -2417,11 +3350,12 @@ function renderFullAccessUsers() {
       });
     });
 
-  // Second: enforced overrides not yet in merged list (DB says employee but hardcode says leadership/admin)
-  Object.entries(ENFORCED_ACCESS_BY_EMAIL).forEach(([email, role]) => {
+  // Second: enforced overrides not yet in merged list (DB says employee but an
+  // override says leadership/admin). Uses the effective map (DB or fallback).
+  Object.entries(getEnforcedAccessMap()).forEach(([email, role]) => {
     const normEmail = normalizeEmail(email);
     if (seenEmails.has(normEmail)) return;
-    const dirEntry = state.employeeDirectory.find(e => normalizeEmail(e.email) === normEmail);
+    const dirEntry = lookupActiveEmployeeByEmail(normEmail);
     if (!dirEntry) return; // not in directory at all — skip
     merged.push({
       full_name: dirEntry.full_name,
@@ -2526,11 +3460,16 @@ async function saveFullAccessRoles() {
         access_level: selectedRole,
         role_title: selectedRole === 'admin' ? 'Admin' : 'Leadership',
         leave_tracking_enabled: true,
-        is_active: true
-      });
+        is_active: true,
+        onboarding_completed: false
+      }).select('id').single();
       if (insertResult.error) {
         setFullAccessNotice(`Unable to add ${email}: ${insertResult.error.message}`);
         return;
+      }
+      // Auto-spawn onboarding checklist for the new employee
+      if (insertResult.data?.id) {
+        spawnOnboardingForEmployee(insertResult.data.id).catch(console.error);
       }
       insertedCount += 1;
     }
@@ -2584,17 +3523,6 @@ function renderTaskEmployeeFilterOptions() {
   }
 }
 
-function canManageTask(task) {
-  if (!task) return false;
-  if (isLeadershipRole()) return true;
-  return Boolean(state.currentEmployeeId && task.employee_id === state.currentEmployeeId);
-}
-
-function canManageTaskView(taskEmployeeId) {
-  if (isLeadershipRole()) return true;
-  return Boolean(state.currentEmployeeId && taskEmployeeId && state.currentEmployeeId === taskEmployeeId);
-}
-
 function parseTaskDeadlineInput(value) {
   const text = String(value || '').trim();
   if (!text) return { value: null, valid: true };
@@ -2643,10 +3571,10 @@ function renderDailyTaskTable() {
     if (task.status === 'done') row.classList.add('task-done');
     const priorityVal = task.sort_order || '';
     const priorityCell = canManage
-      ? `<td data-label="Priority"><select class="priority-input" data-task-id="${task.id}"><option value="0">\u2013</option>${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}"${priorityVal === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td>`
+      ? `<td data-label="Priority"><select class="priority-input" data-task-id="${task.id}"><option value="0">\u2013</option>${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}"${Number(priorityVal) === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td>`
       : `<td data-label="Priority">${priorityVal || '\u2013'}</td>`;
     const hasWeeklyOriginal = state.dailyTasks.some(
-      (t) => t.task_title === task.task_title && t.employee_id === task.employee_id && t.task_date === null && t.status !== 'archived' && t.id !== task.id
+      (t) => taskTitleKey(t.task_title) === taskTitleKey(task.task_title) && t.notes === task.notes && t.employee_id === task.employee_id && t.task_date === null && t.status !== 'archived' && t.id !== task.id
     );
     const demoteBtn = hasWeeklyOriginal
       ? `<button class="ghost small" data-task-action="demote" data-task-id="${task.id}">\u2190 Weekly</button>`
@@ -2662,9 +3590,9 @@ function renderDailyTaskTable() {
       : '';
     row.innerHTML = `
       ${priorityCell}
-      <td data-label="Task">${escapeHtml(task.task_title)}</td>
+      <td data-label="Task">${task.recurring_task_id ? '<span class="recur-mark" title="Repeats monthly">\u21bb</span> ' : ''}${taskTitleHtml(task)}</td>
       <td data-label="Client">${escapeHtml(task.notes || '--')}</td>
-      <td data-label="Description">${escapeHtml(task.description || '--')}</td>
+      <td data-label="Description">${escapeHtml(taskLinkParts(task.description).displayDesc || '--')}</td>
       <td data-label="Status">
         <select class="status-select" data-task-id="${task.id}">
           <option value="in_progress"${task.status !== 'done' ? ' selected' : ''}>In progress</option>
@@ -2677,15 +3605,44 @@ function renderDailyTaskTable() {
   });
 }
 
+// Task Archive month navigation state
+state._archiveMonthOffset = 0;
+
+const archiveMonthPrev = document.getElementById('archiveMonthPrev');
+const archiveMonthNext = document.getElementById('archiveMonthNext');
+const archiveMonthLabel = document.getElementById('archiveMonthLabel');
+
+if (archiveMonthPrev) {
+  archiveMonthPrev.addEventListener('click', () => {
+    state._archiveMonthOffset--;
+    renderTaskArchiveCalendar();
+  });
+}
+if (archiveMonthNext) {
+  archiveMonthNext.addEventListener('click', () => {
+    if (state._archiveMonthOffset < 0) {
+      state._archiveMonthOffset++;
+      renderTaskArchiveCalendar();
+    }
+  });
+}
+
 function renderTaskArchiveCalendar() {
   if (!taskArchiveCalendar) return;
   const employeeId = getTaskViewEmployeeId();
   const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
+  const baseDate = new Date(today.getFullYear(), today.getMonth() + (state._archiveMonthOffset || 0), 1);
+  const year = baseDate.getFullYear();
+  const month = baseDate.getMonth();
   const firstWeekday = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const todayIso = toISODateLocal(today);
+
+  // Update month label and nav buttons
+  if (archiveMonthLabel) {
+    archiveMonthLabel.textContent = baseDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }
+  if (archiveMonthNext) archiveMonthNext.disabled = (state._archiveMonthOffset || 0) >= 0;
 
   taskArchiveCalendar.innerHTML = '';
 
@@ -2710,13 +3667,12 @@ function renderTaskArchiveCalendar() {
     const dateIso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const isPast = dateIso < todayIso;
     const isToday = dateIso === todayIso;
-    const tasks = isPast && employeeId ? tasksForDate(employeeId, dateIso) : [];
     const cell = document.createElement('div');
 
     let cls = 'archive-cell';
-    if (tasks.length) cls += ' has-tasks';
+    if (isPast) cls += ' past-day';
     else if (isToday) cls += ' is-today';
-    else if (!isPast) cls += ' future-day';
+    else cls += ' future-day';
 
     cell.className = cls;
     cell.textContent = String(day);
@@ -2727,19 +3683,61 @@ function renderTaskArchiveCalendar() {
     taskArchiveCalendar.appendChild(cell);
   }
 
-  // Hide detail panel when calendar re-renders (employee switch, etc.)
-  if (archiveDayDetail) {
+  // Auto-select the most recent past date so detail panel shows by default
+  if (employeeId) {
+    const todayDate = new Date();
+    let autoSelectDate;
+    if ((state._archiveMonthOffset || 0) === 0) {
+      // Current month: select yesterday (or today if today is the 1st)
+      const yesterday = new Date(todayDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (yesterday.getMonth() === month && yesterday.getFullYear() === year) {
+        autoSelectDate = toISODateLocal(yesterday);
+      } else {
+        // First of the month — no past day to select
+        autoSelectDate = null;
+      }
+    } else {
+      // Past month: select the last day of that month
+      autoSelectDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    }
+    if (autoSelectDate) {
+      showArchiveDayDetail(autoSelectDate, employeeId);
+    } else if (archiveDayDetail) {
+      archiveDayDetail.classList.add('hidden');
+      archiveDayDetail.closest('.archive-layout')?.classList.remove('has-detail');
+    }
+  } else if (archiveDayDetail) {
     archiveDayDetail.classList.add('hidden');
     archiveDayDetail.closest('.archive-layout')?.classList.remove('has-detail');
   }
 }
 
-function showArchiveDayDetail(dateIso, employeeId) {
+async function showArchiveDayDetail(dateIso, employeeId) {
   if (!archiveDayDetail || !archiveDayDetailBody) return;
-  const tasks = tasksForDate(employeeId, dateIso);
   archiveDayDetailLabel.textContent = formatDateForLabel(dateIso);
-  archiveDayDetailBody.innerHTML = '';
+  archiveDayDetailBody.innerHTML = '<tr><td colspan="4">Loading…</td></tr>';
+  archiveDayDetail.classList.remove('hidden');
+  archiveDayDetail.closest('.archive-layout')?.classList.add('has-detail');
 
+  // Lazy-load tasks for this date directly from DB (includes archived)
+  let tasks = tasksForDate(employeeId, dateIso);
+  if (!tasks.length && state.supabase && state.isAuthenticated) {
+    const res = await state.supabase
+      .from('daily_tasks')
+      .select('id, employee_id, task_date, task_title, status, notes, description, deadline, created_at, updated_at, sort_order, recurring_task_id')
+      .eq('employee_id', employeeId)
+      .eq('task_date', dateIso)
+      .limit(200);
+    if (!res.error && res.data?.length) {
+      tasks = res.data;
+      // Merge into state so subsequent clicks don't re-fetch
+      const existingIds = new Set(state.dailyTasks.map(t => t.id));
+      res.data.forEach(t => { if (!existingIds.has(t.id)) state.dailyTasks.push(t); });
+    }
+  }
+
+  archiveDayDetailBody.innerHTML = '';
   if (!tasks.length) {
     const row = document.createElement('tr');
     row.innerHTML = '<td colspan="4">No tasks logged for this day.</td>';
@@ -2747,19 +3745,17 @@ function showArchiveDayDetail(dateIso, employeeId) {
   } else {
     tasks.forEach((task) => {
       const row = document.createElement('tr');
-      const statusLabel = task.status === 'done' ? 'Completed' : 'In progress';
+      const isDone = task.status === 'done' || task.status === 'archived';
+      const statusLabel = isDone ? 'Completed' : 'In progress';
       row.innerHTML = `
-        <td data-label="Task">${escapeHtml(task.task_title)}</td>
+        <td data-label="Task">${task.recurring_task_id ? '<span class="recur-mark" title="Repeats monthly">\u21bb</span> ' : ''}${taskTitleHtml(task)}</td>
         <td data-label="Client">${escapeHtml(task.notes || '--')}</td>
-        <td data-label="Description">${escapeHtml(task.description || '--')}</td>
-        <td data-label="Status"><span class="chip ${task.status === 'done' ? 'approved-chip' : task.status === 'in_progress' ? 'pending-chip' : ''}">${statusLabel}</span></td>
+        <td data-label="Description">${escapeHtml(taskLinkParts(task.description).displayDesc || '--')}</td>
+        <td data-label="Status"><span class="chip ${isDone ? 'approved-chip' : 'pending-chip'}">${statusLabel}</span></td>
       `;
       archiveDayDetailBody.appendChild(row);
     });
   }
-
-  archiveDayDetail.classList.remove('hidden');
-  archiveDayDetail.closest('.archive-layout')?.classList.add('has-detail');
 
   // Highlight selected cell
   taskArchiveCalendar.querySelectorAll('.archive-cell').forEach((c) => c.classList.remove('selected-day'));
@@ -2795,6 +3791,7 @@ async function loadEmployeeDirectoryFromSupabase() {
       direct_manager_email,
       date_of_birth,
       current_city,
+      onboarding_completed,
       department:departments!employees_department_id_fkey (
         id,
         name,
@@ -2809,7 +3806,7 @@ async function loadEmployeeDirectoryFromSupabase() {
     return;
   }
 
-  state.employeeDirectory = response.data || [];
+  state.employeeDirectory = (response.data || []).map(stripMiddleNameOnEmployee);
   state.employeeDirectory.forEach((employee) => upsertEmployeeInStore(employee));
 
   // Load deactivated employees for leadership reactivation
@@ -2819,7 +3816,7 @@ async function loadEmployeeDirectoryFromSupabase() {
       .select('id, full_name, email, department:departments!employees_department_id_fkey (name)')
       .eq('is_active', false)
       .order('full_name', { ascending: true });
-    state.inactiveEmployees = inactiveRes.data || [];
+    state.inactiveEmployees = (inactiveRes.data || []).map(stripMiddleNameOnEmployee);
   } else {
     state.inactiveEmployees = [];
   }
@@ -2846,11 +3843,17 @@ async function loadDailyTasksFromSupabase() {
     return;
   }
 
+  // Fetch only active (non-archived) tasks. Archived tasks are loaded
+  // on-demand when the archive calendar is clicked (lazy load).
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const response = await state.supabase
     .from('daily_tasks')
-    .select('id, employee_id, task_date, task_title, status, notes, description, deadline, created_at, updated_at, sort_order')
+    .select('id, employee_id, task_date, task_title, status, notes, description, deadline, created_at, updated_at, sort_order, recurring_task_id')
+    .neq('status', 'archived')
+    .or(`task_date.is.null,task_date.gte.${thirtyDaysAgo}`)
     .order('task_date', { ascending: false })
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .limit(2000);
 
   if (response.error) {
     console.error(response.error);
@@ -2860,66 +3863,73 @@ async function loadDailyTasksFromSupabase() {
 
   state.dailyTasks = response.data || [];
 
-  // Daily cleanup: archive done daily tasks + carry forward unfinished (runs once per new day)
+  // Daily cleanup: archive done daily tasks + carry forward unfinished.
+  // Runs ONCE per page-load session to avoid re-creating tasks the user
+  // just deleted (carry-forward would see the past-day original and clone it again).
   const today = toISODateLocal();
-  const lastCleanup = localStorage.getItem('colony_task_cleanup_date');
-  if (lastCleanup !== today) {
-    // Archive completed daily tasks (tasks with a date — not weekly backlog)
-    const dailyDone = state.dailyTasks.filter((t) => t.status === 'done' && t.task_date !== null);
-    if (dailyDone.length) {
-      const ids = dailyDone.map((t) => t.id);
+  const myId = state.currentEmployeeId;
+  const cleanupAlreadyDoneToday = localStorage.getItem('colony_task_cleanup_date') === today;
+  if (myId && !_carryForwardDoneThisSession && !cleanupAlreadyDoneToday) {
+    _carryForwardDoneThisSession = true;
+    const myTasks = state.dailyTasks.filter((t) => t.employee_id === myId);
+
+    // All carry-forward/archival DECISIONS are pure and live in js/tasks.js
+    // (planDailyCleanup, unit-tested); only the I/O happens here.
+    const plan = planDailyCleanup(myTasks, {
+      todayIso: today,
+      weekStartIso: getCurrentWeekStartIso(),
+      dayOfWeek: new Date().getDay(), // 0=Sun, 1=Mon
+      employeeId: myId
+    });
+
+    // Archive my completed tasks from PAST days only (today's completed stays visible)
+    if (plan.pastDoneDaily.length) {
       const archiveRes = await state.supabase
         .from('daily_tasks')
         .update({ status: 'archived' })
-        .in('id', ids);
+        .in('id', plan.pastDoneDaily.map((t) => t.id));
       if (archiveRes.error) {
         console.error('Auto-archive daily cleanup failed:', archiveRes.error.message);
       } else {
-        dailyDone.forEach((t) => { t.status = 'archived'; });
+        plan.pastDoneDaily.forEach((t) => { t.status = 'archived'; });
       }
     }
-    // Carry forward unfinished tasks (in_progress/todo from previous days → today)
-    const carryForward = state.dailyTasks.filter(
-      (t) => t.task_date && t.task_date < today && (t.status === 'in_progress' || t.status === 'todo')
-    );
-    if (carryForward.length) {
-      const ids = carryForward.map((t) => t.id);
-      const carryRes = await state.supabase
-        .from('daily_tasks')
-        .update({ task_date: today })
-        .in('id', ids);
-      if (carryRes.error) {
-        console.error('Task carry-forward failed:', carryRes.error.message);
-      } else {
-        carryForward.forEach((t) => { t.task_date = today; });
-      }
-    }
-    localStorage.setItem('colony_task_cleanup_date', today);
-  }
 
-  // Weekly cleanup: archive ALL done weekly backlog tasks on Monday (fresh start each week)
-  // On other days, keep them visible for the rest of the week
-  const thisWeekStart = getCurrentWeekStartIso();
-  const dayOfWeek = new Date().getDay(); // 0=Sun, 1=Mon
-  const weeklyDone = state.dailyTasks.filter((t) => {
-    if (t.status !== 'done' || t.task_date !== null) return false;
-    // On Monday (or if cleanup hasn't run this week), archive all done weekly tasks
-    if (dayOfWeek === 1) return true;
-    // Other days: only archive tasks completed before this week started
-    const ts = (t.updated_at || t.created_at || '').slice(0, 10);
-    return ts && ts < thisWeekStart;
-  });
-  if (weeklyDone.length) {
-    const ids = weeklyDone.map((t) => t.id);
-    const archiveRes = await state.supabase
-      .from('daily_tasks')
-      .update({ status: 'archived' })
-      .in('id', ids);
-    if (archiveRes.error) {
-      console.error('Auto-archive weekly cleanup failed:', archiveRes.error.message);
-    } else {
-      weeklyDone.forEach((t) => { t.status = 'archived'; });
+    // Carry forward my unfinished tasks: insert fresh copies for today, then
+    // archive the originals so they don't pile up and re-trigger carry-forward.
+    if (plan.carryTasks.length) {
+      const insertRes = await state.supabase.from('daily_tasks').insert(plan.copies).select();
+      if (insertRes.error) {
+        console.error('Task carry-forward copy failed:', insertRes.error.message);
+        setDailyTaskNotice(`Carry-forward failed: ${insertRes.error.message}`);
+      } else if (insertRes.data) {
+        state.dailyTasks.push(...insertRes.data);
+      }
+      const archiveOriginRes = await state.supabase
+        .from('daily_tasks')
+        .update({ status: 'archived' })
+        .in('id', plan.carryTasks.map((t) => t.id));
+      if (!archiveOriginRes.error) {
+        plan.carryTasks.forEach((t) => { t.status = 'archived'; });
+      }
     }
+
+    // Weekly cleanup: archive done weekly backlog tasks (all on Monday; other
+    // days only those finished before this week started)
+    if (plan.weeklyDone.length) {
+      const archiveRes = await state.supabase
+        .from('daily_tasks')
+        .update({ status: 'archived' })
+        .in('id', plan.weeklyDone.map((t) => t.id));
+      if (archiveRes.error) {
+        console.error('Auto-archive weekly cleanup failed:', archiveRes.error.message);
+      } else {
+        plan.weeklyDone.forEach((t) => { t.status = 'archived'; });
+      }
+    }
+
+    // Mark today's cleanup as done so visibility-change handler doesn't re-trigger
+    try { localStorage.setItem('colony_task_cleanup_date', toISODateLocal()); } catch (_) {}
   }
 
   renderTaskClientOptions();
@@ -2958,7 +3968,7 @@ function renderWeeklyPlannerTable() {
     if (task.status === 'done') row.classList.add('task-done');
     const priorityVal = task.sort_order || '';
     const priorityCell = canManage
-      ? `<td data-label="Priority"><select class="priority-input" data-task-id="${task.id}"><option value="0">\u2013</option>${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}"${priorityVal === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td>`
+      ? `<td data-label="Priority"><select class="priority-input" data-task-id="${task.id}"><option value="0">\u2013</option>${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}"${Number(priorityVal) === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td>`
       : `<td data-label="Priority">${priorityVal || '\u2013'}</td>`;
     const actionCell = canManage
       ? `
@@ -2971,9 +3981,9 @@ function renderWeeklyPlannerTable() {
       : '';
     row.innerHTML = `
       ${priorityCell}
-      <td data-label="Task">${escapeHtml(task.task_title)}</td>
+      <td data-label="Task">${task.recurring_task_id ? '<span class="recur-mark" title="Repeats monthly">\u21bb</span> ' : ''}${taskTitleHtml(task)}${hasDailyCopyToday(task, state.dailyTasks, toISODateLocal()) ? ' <span class="today-chip">today \u2713</span>' : ''}</td>
       <td data-label="Client">${escapeHtml(task.notes || '--')}</td>
-      <td data-label="Description">${escapeHtml(task.description || '--')}</td>
+      <td data-label="Description">${escapeHtml(taskLinkParts(task.description).displayDesc || '--')}</td>
       <td data-label="Status">
         <select class="status-select" data-task-id="${task.id}">
           <option value="in_progress"${task.status !== 'done' ? ' selected' : ''}>In progress</option>
@@ -2994,6 +4004,16 @@ function renderDailyTaskViews() {
 }
 
 async function addTask(targetDate = null) {
+  if (addTask._inFlight) {
+    // Never let a hung save silently eat every future click (a BD viewer, 2 Jul
+    // 2026: one wedged request killed task-adds for a whole day in one tab).
+    // Tell the user, and self-heal if the previous attempt is clearly dead.
+    if (Date.now() - (addTask._inFlightAt || 0) < 20000) {
+      setDailyTaskNotice('Still saving the previous task… try again in a few seconds.');
+      return;
+    }
+    addTask._inFlight = false;
+  }
   const title = String(newTaskTitleInput?.value || '').trim();
   const client = String(newTaskClientSelect?.value || '').trim();
   const normalizedClient = normalizeClientNameKey(client);
@@ -3015,12 +4035,43 @@ async function addTask(targetDate = null) {
   }
 
   const description = String(newTaskDescriptionInput?.value || '').trim() || null;
-  if (description && description.length > 50) {
-    setDailyTaskNotice('Description must be 50 characters or less.');
+  if (description && description.length > 200) {
+    setDailyTaskNotice('Description must be 200 characters or less.');
     return;
   }
   const deadline = newTaskDeadlineInput?.value || null;
   const noticeTarget = targetDate ? 'Today' : 'Weekly Planner';
+
+  // ↻ Monthly: save a recurring rule instead of a one-time task. The 10 AM
+  // cron spawns it on the chosen day (short months clamp); if today IS the
+  // day, spawn immediately too.
+  const repeatMode = document.getElementById('newTaskRepeatSelect')?.value || '';
+  if (repeatMode === 'monthly' && state.supabase && state.isAuthenticated) {
+    const dayOfMonth = Number(document.getElementById('newTaskRepeatDay')?.value) || new Date().getDate();
+    addTask._inFlight = true;
+    addTask._inFlightAt = Date.now();
+    try {
+      const ruleRes = await state.supabase.from('recurring_tasks')
+        .insert({ employee_id: state.currentEmployeeId, task_title: title, notes: client, description, day_of_month: dayOfMonth })
+        .select().single();
+      if (ruleRes.error) { setDailyTaskNotice(`Could not save repeating task: ${ruleRes.error.message}`); return; }
+      if (recurringRuleDueOn(dayOfMonth, toISODateLocal())) {
+        const spawn = await state.supabase.rpc('create_daily_task', {
+          p_task_date: toISODateLocal(), p_task_title: title, p_notes: client,
+          p_status: 'in_progress', p_description: description, p_deadline: null
+        });
+        if (!spawn.error) await loadDailyTasksFromSupabase();
+      }
+      if (newTaskTitleInput) newTaskTitleInput.value = '';
+      if (newTaskClientSelect) newTaskClientSelect.value = '';
+      if (newTaskDescriptionInput) newTaskDescriptionInput.value = '';
+      const rsel = document.getElementById('newTaskRepeatSelect');
+      if (rsel) { rsel.value = ''; rsel.dispatchEvent(new Event('change')); }
+      setDailyTaskNotice(`\u21bb Saved — "${title}" repeats monthly on day ${dayOfMonth}.`);
+      loadRecurringTasks().catch(console.error);
+    } finally { addTask._inFlight = false; }
+    return;
+  }
 
   if (!state.supabase || !state.isAuthenticated) {
     const localTask = {
@@ -3045,45 +4096,51 @@ async function addTask(targetDate = null) {
     return;
   }
 
-  if (isLeadershipRole()) {
-    const targetEmployeeId = getTaskViewEmployeeId() || state.currentEmployeeId;
-    const insertResult = await state.supabase.from('daily_tasks').insert({
-      employee_id: targetEmployeeId,
-      task_date: targetDate,
-      task_title: title,
-      status: 'in_progress',
-      notes: client,
-      description,
-      deadline,
-      sort_order: 0
-    });
+  addTask._inFlight = true;
+  addTask._inFlightAt = Date.now();
+  try {
+    if (isLeadershipRole()) {
+      const targetEmployeeId = getTaskViewEmployeeId() || state.currentEmployeeId;
+      const insertResult = await state.supabase.from('daily_tasks').insert({
+        employee_id: targetEmployeeId,
+        task_date: targetDate,
+        task_title: title,
+        status: 'in_progress',
+        notes: client,
+        description,
+        deadline,
+        sort_order: 0
+      });
 
-    if (insertResult.error) {
-      setDailyTaskNotice(`Task add failed: ${insertResult.error.message}`);
-      return;
-    }
-  } else {
-    const createResult = await state.supabase.rpc('create_daily_task', {
-      p_task_date: targetDate,
-      p_task_title: title,
-      p_notes: client,
-      p_status: 'in_progress',
-      p_description: description,
-      p_deadline: deadline
-    });
+      if (insertResult.error) {
+        setDailyTaskNotice(`Task add failed: ${insertResult.error.message}`);
+        return;
+      }
+    } else {
+      const createResult = await state.supabase.rpc('create_daily_task', {
+        p_task_date: targetDate,
+        p_task_title: title,
+        p_notes: client,
+        p_status: 'in_progress',
+        p_description: description,
+        p_deadline: deadline
+      });
 
-    if (createResult.error) {
-      setDailyTaskNotice(`Task add failed: ${createResult.error.message}`);
-      return;
+      if (createResult.error) {
+        setDailyTaskNotice(`Task add failed: ${createResult.error.message}`);
+        return;
+      }
     }
+
+    if (newTaskTitleInput) newTaskTitleInput.value = '';
+    if (newTaskClientSelect) newTaskClientSelect.value = '';
+    if (newTaskDescriptionInput) newTaskDescriptionInput.value = '';
+    if (newTaskDeadlineInput) newTaskDeadlineInput.value = '';
+    setDailyTaskNotice('');
+    await loadDailyTasksFromSupabase();
+  } finally {
+    addTask._inFlight = false;
   }
-
-  if (newTaskTitleInput) newTaskTitleInput.value = '';
-  if (newTaskClientSelect) newTaskClientSelect.value = '';
-  if (newTaskDescriptionInput) newTaskDescriptionInput.value = '';
-  if (newTaskDeadlineInput) newTaskDeadlineInput.value = '';
-  setDailyTaskNotice('');
-  await loadDailyTasksFromSupabase();
 }
 
 async function deleteTaskById(taskId) {
@@ -3094,7 +4151,7 @@ async function deleteTaskById(taskId) {
   const confirmMsg = isWeekly
     ? 'Delete this task from the weekly planner? Daily copies already promoted will not be affected.'
     : 'Delete this task from today? The weekly copy is not affected.';
-  if (!window.confirm(confirmMsg)) return;
+  if (!await colonyConfirm(confirmMsg)) return;
 
   if (!state.supabase || !state.isAuthenticated) {
     state.dailyTasks = state.dailyTasks.filter((t) => t.id !== taskId);
@@ -3103,8 +4160,10 @@ async function deleteTaskById(taskId) {
     return;
   }
 
-  let deleteQuery = state.supabase.from('daily_tasks').delete().eq('id', taskId);
-  if (!isLeadershipRole()) {
+  // Always filter by employee_id for own tasks. RLS handles leadership separately —
+  // don't skip this filter based on client-side role (DB access_level may differ).
+  let deleteQuery = state.supabase.from('daily_tasks').delete().eq('id', taskId).select();
+  if (task.employee_id === state.currentEmployeeId) {
     deleteQuery = deleteQuery.eq('employee_id', state.currentEmployeeId);
   }
   const result = await deleteQuery;
@@ -3112,9 +4171,15 @@ async function deleteTaskById(taskId) {
     setDailyTaskNotice(`Unable to delete task: ${result.error.message}`);
     return;
   }
+  if (!result.data || result.data.length === 0) {
+    setDailyTaskNotice('Unable to delete task: permission denied or task not found.');
+    return;
+  }
 
+  // Remove from local state immediately for instant UI feedback
+  state.dailyTasks = state.dailyTasks.filter((t) => t.id !== taskId);
+  renderDailyTaskViews();
   setDailyTaskNotice('Task deleted.');
-  await loadDailyTasksFromSupabase();
 }
 
 async function promoteTaskToToday(taskId) {
@@ -3124,10 +4189,11 @@ async function promoteTaskToToday(taskId) {
 
   const todayIso = toISODateLocal();
 
-  // Prevent duplicate copies
+  // Prevent duplicate copies (case-insensitive to match DB unique index)
+  const taskKey = taskTitleKey(task.task_title);
   const alreadyCopied = state.dailyTasks.some(
     (t) =>
-      t.task_title === task.task_title &&
+      taskTitleKey(t.task_title) === taskKey &&
       t.employee_id === task.employee_id &&
       t.task_date === todayIso &&
       t.status !== 'archived'
@@ -3191,8 +4257,8 @@ async function demoteTaskToWeekly(taskId) {
     return;
   }
 
-  let deleteQuery = state.supabase.from('daily_tasks').delete().eq('id', taskId);
-  if (!isLeadershipRole()) {
+  let deleteQuery = state.supabase.from('daily_tasks').delete().eq('id', taskId).select();
+  if (task.employee_id === state.currentEmployeeId) {
     deleteQuery = deleteQuery.eq('employee_id', state.currentEmployeeId);
   }
   const result = await deleteQuery;
@@ -3200,9 +4266,14 @@ async function demoteTaskToWeekly(taskId) {
     setDailyTaskNotice(`Unable to remove from today: ${result.error.message}`);
     return;
   }
+  if (!result.data || result.data.length === 0) {
+    setDailyTaskNotice('Unable to remove task: permission denied or task not found.');
+    return;
+  }
 
+  state.dailyTasks = state.dailyTasks.filter((t) => t.id !== taskId);
+  renderDailyTaskViews();
   setDailyTaskNotice('Removed from today. Task stays in Weekly Planner.');
-  await loadDailyTasksFromSupabase();
 }
 
 async function updateTaskStatus(taskId, newStatus) {
@@ -3224,14 +4295,19 @@ async function updateTaskStatus(taskId, newStatus) {
     return;
   }
 
-  let updateQuery = state.supabase.from('daily_tasks').update({ status: newStatus }).eq('id', taskId);
-  if (!isLeadershipRole()) {
+  let updateQuery = state.supabase.from('daily_tasks').update({ status: newStatus }).eq('id', taskId).select();
+  if (task.employee_id === state.currentEmployeeId) {
     updateQuery = updateQuery.eq('employee_id', state.currentEmployeeId);
   }
   const result = await updateQuery;
 
   if (result.error) {
     setDailyTaskNotice(`Status update failed: ${result.error.message}`);
+    renderDailyTaskViews();
+    return;
+  }
+  if (!result.data || result.data.length === 0) {
+    setDailyTaskNotice('Status update failed: permission denied.');
     renderDailyTaskViews();
     return;
   }
@@ -3247,142 +4323,58 @@ async function updateTaskStatus(taskId, newStatus) {
   renderDailyTaskViews();
 }
 
+// Sibling selection for both cascade functions lives in js/tasks.js
+// (linkedTasksFor, unit-tested) — daily done cascades to the weekly original +
+// all other daily copies; weekly done cascades to all daily copies.
 function handleDoneCascadeLocal(task) {
-  const isDaily = task.task_date !== null;
-  if (isDaily) {
-    // Daily done → also mark matching weekly original as done
-    const weeklyOriginal = state.dailyTasks.find(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date === null &&
-        t.status !== 'archived' && t.status !== 'done' &&
-        t.id !== task.id
-    );
-    if (weeklyOriginal) weeklyOriginal.status = 'done';
-  } else {
-    // Weekly done → also mark ALL matching daily copies as done (any date)
-    state.dailyTasks.filter(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date !== null &&
-        t.status !== 'archived' && t.status !== 'done' &&
-        t.id !== task.id
-    ).forEach((daily) => { daily.status = 'done'; });
-  }
+  linkedTasksFor(task, state.dailyTasks, 'cascade-done').forEach((sib) => { sib.status = 'done'; });
 }
 
 async function handleDoneCascade(task) {
-  const isDaily = task.task_date !== null;
-  if (isDaily) {
-    // Daily done → also mark matching weekly original as done
-    const weeklyOriginal = state.dailyTasks.find(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date === null &&
-        t.status !== 'archived' && t.status !== 'done' &&
-        t.id !== task.id
-    );
-    if (weeklyOriginal) {
-      let cascadeQuery = state.supabase
-        .from('daily_tasks')
-        .update({ status: 'done' })
-        .eq('id', weeklyOriginal.id);
-      if (!isLeadershipRole()) {
-        cascadeQuery = cascadeQuery.eq('employee_id', state.currentEmployeeId);
-      }
-      const cascadeResult = await cascadeQuery;
-      if (!cascadeResult.error) {
-        weeklyOriginal.status = 'done';
-      }
+  const siblings = linkedTasksFor(task, state.dailyTasks, 'cascade-done');
+  for (const sib of siblings) {
+    let cascadeQuery = state.supabase
+      .from('daily_tasks')
+      .update({ status: 'done' })
+      .eq('id', sib.id);
+    if (sib.employee_id === state.currentEmployeeId) {
+      cascadeQuery = cascadeQuery.eq('employee_id', state.currentEmployeeId);
     }
-  } else {
-    // Weekly done → also mark ALL matching daily copies as done (any date)
-    const dailyCopies = state.dailyTasks.filter(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date !== null &&
-        t.status !== 'archived' && t.status !== 'done' &&
-        t.id !== task.id
-    );
-    for (const daily of dailyCopies) {
-      let dq = state.supabase.from('daily_tasks').update({ status: 'done' }).eq('id', daily.id);
-      if (!isLeadershipRole()) dq = dq.eq('employee_id', state.currentEmployeeId);
-      const dr = await dq;
-      if (!dr.error) daily.status = 'done';
+    const cascadeResult = await cascadeQuery;
+    if (!cascadeResult.error) {
+      sib.status = 'done';
     }
   }
 }
 
+// Status-sync selection also lives in js/tasks.js — 'sync-status' mode targets
+// the weekly original (for a daily change) or all daily copies (for a weekly
+// change), and unlike cascade-done it can move tasks OUT of done.
 function syncLinkedTaskStatusLocal(task, newStatus) {
-  const isDaily = task.task_date !== null;
-  if (isDaily) {
-    // Daily status change → sync to matching weekly task
-    const weekly = state.dailyTasks.find(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date === null &&
-        t.status !== 'archived' &&
-        t.id !== task.id
-    );
-    if (weekly) weekly.status = newStatus;
-  } else {
-    // Weekly status change → sync to ALL matching daily copies (any date)
-    state.dailyTasks.filter(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date !== null &&
-        t.status !== 'archived' &&
-        t.id !== task.id
-    ).forEach((daily) => { daily.status = newStatus; });
-  }
+  linkedTasksFor(task, state.dailyTasks, 'sync-status').forEach((t) => { t.status = newStatus; });
 }
 
 async function syncLinkedTaskStatus(task, newStatus) {
-  const isDaily = task.task_date !== null;
-  if (isDaily) {
-    // Daily status change → sync to matching weekly task
-    const weekly = state.dailyTasks.find(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date === null &&
-        t.status !== 'archived' &&
-        t.id !== task.id
-    );
-    if (weekly) {
-      let q = state.supabase.from('daily_tasks').update({ status: newStatus }).eq('id', weekly.id);
-      if (!isLeadershipRole()) q = q.eq('employee_id', state.currentEmployeeId);
-      const res = await q;
-      if (!res.error) weekly.status = newStatus;
-    }
-  } else {
-    // Weekly status change → sync to ALL matching daily copies (any date)
-    const dailyCopies = state.dailyTasks.filter(
-      (t) =>
-        t.task_title === task.task_title &&
-        t.employee_id === task.employee_id &&
-        t.task_date !== null &&
-        t.status !== 'archived' &&
-        t.id !== task.id
-    );
-    for (const daily of dailyCopies) {
-      let q = state.supabase.from('daily_tasks').update({ status: newStatus }).eq('id', daily.id);
-      if (!isLeadershipRole()) q = q.eq('employee_id', state.currentEmployeeId);
-      const res = await q;
-      if (!res.error) daily.status = newStatus;
-    }
+  const linked = linkedTasksFor(task, state.dailyTasks, 'sync-status');
+  for (const t of linked) {
+    let q = state.supabase.from('daily_tasks').update({ status: newStatus }).eq('id', t.id);
+    if (t.employee_id === state.currentEmployeeId) q = q.eq('employee_id', state.currentEmployeeId);
+    const res = await q;
+    if (!res.error) t.status = newStatus;
   }
 }
 
 function editTaskById(taskId) {
   const task = state.dailyTasks.find((item) => item.id === taskId) || null;
   if (!task || !canManageTask(task)) return;
+
+  // Single-row edit: if another row is already mid-edit, collapse it first
+  // (re-render resets every row to display). Previously several rows could be
+  // open at once, and saving one re-rendered the list and silently wiped the
+  // unsaved edits in the others. Now only one row is editable at a time.
+  if (document.querySelector('[data-task-action="save-edit"]')) {
+    renderDailyTaskViews();
+  }
 
   const row = document.querySelector(`[data-task-action="edit"][data-task-id="${taskId}"]`)?.closest('tr');
   if (!row) return;
@@ -3395,7 +4387,7 @@ function editTaskById(taskId) {
     <td data-label="Priority"><select class="priority-input" data-task-id="${task.id}"><option value="0">\u2013</option>${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}"${(task.sort_order || 0) === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td>
     <td><input type="text" class="edit-task-title" value="${escapeHtml(task.task_title || '')}" maxlength="25" /></td>
     <td><select class="edit-task-client"><option value="">Select client</option>${clientOptions}</select></td>
-    <td><input type="text" class="edit-task-desc" value="${escapeHtml(task.description || '')}" placeholder="Optional" maxlength="50" /></td>
+    <td><input type="text" class="edit-task-desc" value="${escapeHtml(task.description || '')}" placeholder="Optional" maxlength="200" /></td>
     <td>
       <select class="status-select" data-task-id="${task.id}">
         <option value="in_progress"${task.status !== 'done' ? ' selected' : ''}>In progress</option>
@@ -3413,7 +4405,7 @@ function editTaskById(taskId) {
 
 async function saveTaskEdit(taskId) {
   const task = state.dailyTasks.find((item) => item.id === taskId) || null;
-  if (!task) return;
+  if (!task || !canManageTask(task)) return;
 
   const row = document.querySelector(`[data-task-action="save-edit"][data-task-id="${taskId}"]`)?.closest('tr');
   if (!row) return;
@@ -3437,7 +4429,7 @@ async function saveTaskEdit(taskId) {
   }
 
   let updateQuery = state.supabase.from('daily_tasks').update(updates).eq('id', taskId);
-  if (!isLeadershipRole()) {
+  if (task.employee_id === state.currentEmployeeId) {
     updateQuery = updateQuery.eq('employee_id', state.currentEmployeeId);
   }
   const result = await updateQuery;
@@ -3446,7 +4438,45 @@ async function saveTaskEdit(taskId) {
     return;
   }
 
+  const oldTitle = task.task_title;
+  const oldClient = task.notes;
+  const isWeekly = task.task_date === null;
   Object.assign(task, updates);
+
+  // Cascade title/client/description edits to keep weekly↔daily in sync
+  const nextDesc = updates.description;
+  if (oldTitle !== nextTitle || oldClient !== nextClient || task.description !== nextDesc) {
+    if (isWeekly) {
+      // Weekly edited → update all daily copies
+      const oldKey = taskTitleKey(oldTitle);
+      const dailyCopies = state.dailyTasks.filter(
+        (t) => taskTitleKey(t.task_title) === oldKey && t.notes === oldClient &&
+               t.employee_id === task.employee_id &&
+               t.task_date !== null && t.status !== 'archived' && t.id !== task.id
+      );
+      for (const daily of dailyCopies) {
+        let cq = state.supabase.from('daily_tasks').update(updates).eq('id', daily.id);
+        if (daily.employee_id === state.currentEmployeeId) cq = cq.eq('employee_id', state.currentEmployeeId);
+        const cRes = await cq;
+        if (!cRes.error) Object.assign(daily, updates);
+      }
+    } else {
+      // Daily edited → update the weekly original
+      const oldKey = taskTitleKey(oldTitle);
+      const weeklyOriginal = state.dailyTasks.find(
+        (t) => taskTitleKey(t.task_title) === oldKey && t.notes === oldClient &&
+               t.employee_id === task.employee_id &&
+               t.task_date === null && t.status !== 'archived' && t.id !== task.id
+      );
+      if (weeklyOriginal) {
+        let wq = state.supabase.from('daily_tasks').update(updates).eq('id', weeklyOriginal.id);
+        if (weeklyOriginal.employee_id === state.currentEmployeeId) wq = wq.eq('employee_id', state.currentEmployeeId);
+        const wRes = await wq;
+        if (!wRes.error) Object.assign(weeklyOriginal, updates);
+      }
+    }
+  }
+
   renderDailyTaskViews();
   setDailyTaskNotice('Task updated.');
 }
@@ -3471,6 +4501,41 @@ if (archiveDayDetailClose) {
     taskArchiveCalendar?.querySelectorAll('.archive-cell').forEach((c) => c.classList.remove('selected-day'));
   });
 }
+
+// ── Recurring monthly tasks: form controls + manage list ──
+(function wireRecurringControls() {
+  const sel = document.getElementById('newTaskRepeatSelect');
+  const daySel = document.getElementById('newTaskRepeatDay');
+  if (!sel || !daySel) return;
+  daySel.innerHTML = Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}"${i + 1 === new Date().getDate() ? ' selected' : ''}>on the ${i + 1}</option>`).join('');
+  sel.addEventListener('change', () => daySel.classList.toggle('hidden', sel.value !== 'monthly'));
+})();
+
+async function loadRecurringTasks() {
+  if (!state.supabase || !state.isAuthenticated) return;
+  const res = await state.supabase.from('recurring_tasks').select('*').eq('is_active', true).order('day_of_month');
+  if (res.error) { console.warn('Recurring load failed:', res.error.message); return; }
+  const list = document.getElementById('recurringTasksList');
+  const count = document.getElementById('recurringCount');
+  if (!list) return;
+  const rows = res.data || [];
+  if (count) count.textContent = String(rows.length);
+  list.innerHTML = rows.length ? rows.map(r => `
+    <div class="notify-item" style="display:flex;align-items:center;gap:10px;cursor:default;">
+      <span class="recur-mark" title="Repeats monthly">\u21bb</span>
+      <span style="flex:1;">${escapeHtml(r.task_title)} <span class="mini-meta">· ${escapeHtml(r.notes || '')} · monthly on the ${r.day_of_month}</span></span>
+      <button class="ghost small danger-text" type="button" data-stop-recurring="${escapeHtml(r.id)}">stop</button>
+    </div>`).join('') : '<p class="mini-meta">None yet — pick "\u21bb Monthly" when adding a task.</p>';
+}
+
+document.getElementById('recurringTasksList')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-stop-recurring]');
+  if (!btn) return;
+  if (!await colonyConfirm('Stop this repeating task? Already-created tasks stay.', { title: 'Stop repeating', confirmLabel: 'Stop', danger: true })) return;
+  const res = await state.supabase.from('recurring_tasks').update({ is_active: false }).eq('id', btn.dataset.stopRecurring).select();
+  if (res.error || !res.data?.length) { setDailyTaskNotice('Could not stop (permission?).'); return; }
+  loadRecurringTasks().catch(console.error);
+});
 
 if (addWeeklyTaskBtn) {
   addWeeklyTaskBtn.addEventListener('click', () => {
@@ -3533,18 +4598,25 @@ function handleTaskTableClick(event) {
 
 async function updateTaskSortOrder(taskId, newOrder) {
   const task = state.dailyTasks.find((t) => t.id === taskId);
-  if (!task) return;
+  if (!task || !canManageTask(task)) return;
 
+  const oldOrder = task.sort_order;
   task.sort_order = newOrder;
 
   if (state.supabase && state.isAuthenticated) {
-    const result = await state.supabase
+    let updateQuery = state.supabase
       .from('daily_tasks')
       .update({ sort_order: newOrder })
       .eq('id', taskId);
+    if (task.employee_id === state.currentEmployeeId) {
+      updateQuery = updateQuery.eq('employee_id', state.currentEmployeeId);
+    }
+    const result = await updateQuery;
     if (result.error) {
+      task.sort_order = oldOrder; // rollback
       console.error('Priority update failed:', result.error.message);
       setDailyTaskNotice(`Priority update failed: ${result.error.message}`);
+      renderDailyTaskViews();
       return;
     }
   }
@@ -3601,7 +4673,8 @@ async function loadFeatureRequestsFromSupabase() {
   const response = await state.supabase
     .from('feature_requests')
     .select('id, employee_id, request_text, request_type, status, created_at, updated_at, links, attachments, employee:employees!feature_requests_employee_id_fkey(full_name)')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .limit(2000);
 
   if (response.error) {
     console.error(response.error);
@@ -3609,9 +4682,10 @@ async function loadFeatureRequestsFromSupabase() {
     return;
   }
 
+  state.loadedAt.featureRequests = Date.now();
   const requests = (response.data || []).map(r => ({
     ...r,
-    author_name: r.employee?.full_name || 'Unknown',
+    author_name: displayPersonName(r.employee?.full_name || '', 'Unknown'),
     replies: []
   }));
 
@@ -3619,14 +4693,15 @@ async function loadFeatureRequestsFromSupabase() {
   const repliesRes = await state.supabase
     .from('feature_request_replies')
     .select('id, feature_request_id, employee_id, reply_text, created_at, attachments, employee:employees!feature_request_replies_employee_id_fkey(full_name)')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .limit(2000);
 
   if (!repliesRes.error && repliesRes.data) {
     const byFr = {};
     for (const r of repliesRes.data) {
       const frId = r.feature_request_id;
       if (!byFr[frId]) byFr[frId] = [];
-      byFr[frId].push({ ...r, author_name: r.employee?.full_name || 'Unknown' });
+      byFr[frId].push({ ...r, author_name: displayPersonName(r.employee?.full_name || '', 'Unknown') });
     }
     for (const req of requests) {
       req.replies = byFr[req.id] || [];
@@ -3636,7 +4711,8 @@ async function loadFeatureRequestsFromSupabase() {
   // Batch-load all upvotes
   const upvotesRes = await state.supabase
     .from('feature_request_upvotes')
-    .select('feature_request_id, employee_id');
+    .select('feature_request_id, employee_id')
+    .limit(2000);
 
   if (!upvotesRes.error && upvotesRes.data) {
     const byFr = {};
@@ -3660,6 +4736,25 @@ async function loadFeatureRequestsFromSupabase() {
   renderFeatureRequests();
 }
 
+// Shared reply renderer — used by the active cards AND the completed section
+// (completed items expand on click to show their reply thread).
+function renderFrReply(reply) {
+  const rts = new Date(reply.created_at);
+  const rTimeStr = rts.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    + ' · ' + rts.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const replyAttach = (reply.attachments || []).length ? `<div class="fr-attachments">${(reply.attachments || []).map(a =>
+    `<a href="#" class="fr-attachment-thumb" data-storage-path="${escapeHtml(a.path)}" title="${escapeHtml(a.name)}"><img class="fr-thumb-img" data-storage-path="${escapeHtml(a.path)}" alt="${escapeHtml(a.name)}"></a>`
+  ).join('')}</div>` : '';
+  return `<div class="fr-reply" data-reply-id="${reply.id}">
+    <div class="fr-reply-head">
+      <strong>${escapeHtml(reply.author_name)}</strong>
+      <span>${rTimeStr}</span>
+    </div>
+    <div class="fr-reply-body">${escapeHtml(reply.reply_text).replace(/\n/g, '<br>')}</div>
+    ${replyAttach}
+  </div>`;
+}
+
 function renderFeatureRequests() {
   if (!featureRequestThread) return;
 
@@ -3672,8 +4767,10 @@ function renderFeatureRequests() {
     if (!doneRequests.length) {
       frCompletedList.innerHTML = '<p class="mini-meta">No completed requests yet.</p>';
     } else {
-      const doneFeatures = doneRequests.filter(fr => fr.request_type !== 'bug');
-      const doneBugs = doneRequests.filter(fr => fr.request_type === 'bug');
+      // Latest completed first (updated_at = completion time)
+      const byLatestDone = (a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || ''));
+      const doneFeatures = doneRequests.filter(fr => fr.request_type !== 'bug').sort(byLatestDone);
+      const doneBugs = doneRequests.filter(fr => fr.request_type === 'bug').sort(byLatestDone);
 
       const renderCompletedItem = (fr) => {
         const ts = new Date(fr.updated_at || fr.created_at);
@@ -3683,9 +4780,19 @@ function renderFeatureRequests() {
         const reopenBtn = (isBug && (isOwner || isSuperadminUser()))
           ? ` <button class="ghost small" data-fr-action="reopen" data-fr-id="${fr.id}">Re-open</button>`
           : '';
-        return `<div class="fr-completed-item">
+        // Replies stay hidden until the item is clicked — so what was said
+        // (diagnosis, fix notes) is discoverable without cluttering the list.
+        const replies = fr.replies || [];
+        const replyCount = replies.length
+          ? ` · <span class="fr-completed-reply-count">💬 ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}</span>`
+          : '';
+        const repliesBlock = replies.length
+          ? `<div class="fr-completed-replies" style="display:none">${replies.map(renderFrReply).join('')}</div>`
+          : '';
+        return `<div class="fr-completed-item${replies.length ? ' fr-completed-expandable' : ''}">
           <div class="fr-completed-text">${escapeHtml(fr.request_text)}</div>
-          <div class="fr-completed-meta">by ${escapeHtml(fr.author_name)} · completed ${dateStr}${reopenBtn}</div>
+          <div class="fr-completed-meta">by ${escapeHtml(fr.author_name)} · completed ${dateStr}${replyCount}${reopenBtn}</div>
+          ${repliesBlock}
         </div>`;
       };
 
@@ -3720,6 +4827,7 @@ function renderFeatureRequests() {
       const archivedList = document.getElementById('frArchivedList');
       if (archivedList) {
         const isSA = isSuperadminUser();
+        archivedRequests.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
         archivedList.innerHTML = archivedRequests.map(fr => {
           const ts = new Date(fr.updated_at || fr.created_at);
           const dateStr = ts.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -3744,8 +4852,10 @@ function renderFeatureRequests() {
     return;
   }
 
-  const featureItems = activeRequests.filter(fr => fr.request_type !== 'bug');
-  const bugItems = activeRequests.filter(fr => fr.request_type === 'bug');
+  // Most recent on top
+  const byNewest = (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  const featureItems = activeRequests.filter(fr => fr.request_type !== 'bug').sort(byNewest);
+  const bugItems = activeRequests.filter(fr => fr.request_type === 'bug').sort(byNewest);
 
   const isSuperAdmin = isSuperadminUser();
   const myId = state.currentEmployeeId;
@@ -3791,22 +4901,7 @@ function renderFeatureRequests() {
     const hasHidden = replies.length > VISIBLE_COUNT;
     const hiddenCount = replies.length - VISIBLE_COUNT;
 
-    const renderReply = (reply) => {
-      const rts = new Date(reply.created_at);
-      const rTimeStr = rts.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-        + ' · ' + rts.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-      const replyAttach = (reply.attachments || []).length ? `<div class="fr-attachments">${(reply.attachments || []).map(a =>
-        `<a href="#" class="fr-attachment-thumb" data-storage-path="${escapeHtml(a.path)}" title="${escapeHtml(a.name)}"><img class="fr-thumb-img" data-storage-path="${escapeHtml(a.path)}" alt="${escapeHtml(a.name)}"></a>`
-      ).join('')}</div>` : '';
-      return `<div class="fr-reply" data-reply-id="${reply.id}">
-        <div class="fr-reply-head">
-          <strong>${escapeHtml(reply.author_name)}</strong>
-          <span>${rTimeStr}</span>
-        </div>
-        <div class="fr-reply-body">${escapeHtml(reply.reply_text).replace(/\n/g, '<br>')}</div>
-        ${replyAttach}
-      </div>`;
-    };
+    const renderReply = renderFrReply;
 
     let repliesHtml = '';
     if (replies.length) {
@@ -3989,8 +5084,8 @@ async function submitFeatureRequest() {
     return;
   }
 
-  // Notify admin on new bug reports
-  if (requestType === 'bug' && result.data?.id) {
+  // Notify the superadmin on new posts (bugs AND feature requests)
+  if (result.data?.id) {
     notifyFeatureRequestOwner('new_bug', result.data.id);
   }
 
@@ -4066,6 +5161,19 @@ function notifyFeatureRequestOwner(type, featureRequestId, extra = {}) {
   }).catch(err => console.error('Feature request notification failed:', err));
 }
 
+function notifyClientStatusChange(type, extra = {}) {
+  if (!state.session?.access_token) return;
+  const actorName = displayPersonName(state.employeeProfile?.full_name || '', 'Someone');
+  fetch('/api/client-status-notify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${state.session.access_token}`
+    },
+    body: JSON.stringify({ type, actorName, ...extra })
+  }).catch(err => console.error('Client status notification failed:', err));
+}
+
 async function toggleFeatureRequestUpvote(frId) {
   if (!state.supabase || !state.isAuthenticated) return;
 
@@ -4139,7 +5247,7 @@ async function submitFeatureRequestReply(frId) {
 
   if (state.frReplyPendingFiles) delete state.frReplyPendingFiles[frId];
   setFeatureRequestNotice('Reply added.');
-  notifyFeatureRequestOwner('reply', frId);
+  notifyFeatureRequestOwner('reply', frId, { replyText: text || '(screenshot)' });
   await loadFeatureRequestsFromSupabase();
 }
 
@@ -4258,12 +5366,14 @@ async function deleteFeatureRequest(frId) {
     return;
   }
 
-  if (!confirm('Delete this feature request? This cannot be undone.')) return;
+  if (!await colonyConfirm('Delete this feature request? This cannot be undone.', { title: 'Delete request', confirmLabel: 'Delete', danger: true })) return;
 
   // Delete related data first (upvotes, replies), then the request
-  await state.supabase.from('feature_request_upvotes').delete().eq('feature_request_id', frId);
-  await state.supabase.from('feature_request_replies').delete().eq('feature_request_id', frId);
-  const result = await state.supabase.from('feature_requests').delete().eq('id', frId);
+  const upvoteDel = await state.supabase.from('feature_request_upvotes').delete().eq('feature_request_id', frId).select();
+  if (upvoteDel.error) { setFeatureRequestNotice(`Delete failed: ${upvoteDel.error.message}`); return; }
+  const replyDel = await state.supabase.from('feature_request_replies').delete().eq('feature_request_id', frId).select();
+  if (replyDel.error) { setFeatureRequestNotice(`Delete failed: ${replyDel.error.message}`); return; }
+  const result = await state.supabase.from('feature_requests').delete().eq('id', frId).select();
 
   if (result.error) {
     setFeatureRequestNotice(`Delete failed: ${result.error.message}`);
@@ -4478,12 +5588,33 @@ if (frArchivedList) {
 if (frCompletedList) {
   frCompletedList.addEventListener('click', (event) => {
     const btn = event.target.closest('button[data-fr-action="reopen"]');
-    if (!btn) return;
-    const frId = btn.dataset.frId;
-    reopenBug(frId).catch(error => {
-      console.error(error);
-      setFeatureRequestNotice(`Re-open failed: ${error.message}`);
-    });
+    if (btn) {
+      reopenBug(btn.dataset.frId).catch(error => {
+        console.error(error);
+        setFeatureRequestNotice(`Re-open failed: ${error.message}`);
+      });
+      return;
+    }
+
+    // Reply attachment → open full size (same behavior as the active thread)
+    const thumb = event.target.closest('.fr-attachment-thumb');
+    if (thumb) {
+      event.preventDefault();
+      const path = thumb.dataset.storagePath;
+      if (path && state.supabase) {
+        state.supabase.storage.from('feature-attachments').createSignedUrl(path, 3600).then(({ data }) => {
+          if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+        });
+      }
+      return;
+    }
+
+    // Click anywhere on a completed item → expand/collapse its replies
+    const item = event.target.closest('.fr-completed-expandable');
+    if (item) {
+      const block = item.querySelector('.fr-completed-replies');
+      if (block) block.style.display = block.style.display === 'none' ? 'flex' : 'none';
+    }
   });
 }
 
@@ -4508,17 +5639,9 @@ const allocClientFilter = document.getElementById('allocClientFilter');
 const allocEditPolicyNote = document.getElementById('allocEditPolicyNote');
 const allocationTable = document.getElementById('allocationTable')?.querySelector('tbody');
 
-function mondayWeekStartDate(dateValue = new Date()) {
-  const date = new Date(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate());
-  const day = date.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diffToMonday);
-  return date;
-}
+// mondayWeekStartDate lives in js/alloc.js
 
-function getCurrentWeekStartIso() {
-  return toISODateLocal(mondayWeekStartDate());
-}
+// getCurrentWeekStartIso lives in js/alloc.js
 
 function getEffectiveWorkDaysForWeek(weekStartIso, employeeId) {
   const weekStart = parseIsoDateLocal(weekStartIso);
@@ -4529,7 +5652,7 @@ function getEffectiveWorkDaysForWeek(weekStartIso, employeeId) {
     d.setDate(weekStart.getDate() + i);
     weekDates.push(toISODateLocal(d));
   }
-  const holidays = PUBLIC_HOLIDAYS_2026.filter(h => weekDates.includes(h.date));
+  const holidays = getPublicHolidays().filter(h => weekDates.includes(h.date));
   const holidayDates = new Set(holidays.map(h => h.date));
   let leaveDayCount = 0;
   if (employeeId && state.leaveRowsById) {
@@ -4556,14 +5679,8 @@ function getCurrentAllocEffectiveHours() {
 /* ── Allocation week navigation ── */
 
 function allocMonthWindow() {
-  const raw = String(allocMonthSelect?.value || '').trim();
-  const match = raw.match(/^(\d{4})-(\d{2})$/);
-  const base = new Date();
-  const year = match ? Number(match[1]) : base.getFullYear();
-  const month = match ? Number(match[2]) : base.getMonth() + 1;
-  const monthStartDate = new Date(year, month - 1, 1);
-  const monthEndDate = new Date(year, month, 0);
-  return { monthStartDate, monthEndDate };
+  // Pure math lives in js/alloc.js; this just reads My Allocation's <select>.
+  return monthWindowFor(allocMonthSelect?.value);
 }
 
 function allocWeekStartsForMonth() {
@@ -4626,14 +5743,6 @@ function navigateAllocWeek(delta) {
   });
 }
 
-function formatWeekRangeLabel(weekStartIso) {
-  const start = parseIsoDateLocal(weekStartIso) || new Date(weekStartIso);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  const fmt = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' });
-  return `${fmt.format(start)} – ${fmt.format(end)}`;
-}
-
 function getAllocationViewEmployeeId() {
   if (isLeadershipRole()) {
     return state.allocationViewEmployeeId || state.currentEmployeeId || null;
@@ -4647,7 +5756,7 @@ function getSelectedProfileEmployeeId() {
 
 function currentAllocationTeam() {
   const targetEmployeeId = getAllocationViewEmployeeId();
-  const fromDirectory = state.employeeDirectory.find((row) => row.id === targetEmployeeId);
+  const fromDirectory = lookupActiveEmployee(targetEmployeeId);
   if (fromDirectory?.department?.name) return normalizeTeamName(fromDirectory.department.name, TEAM_AM);
   const profile = selectedEmployeeRecord();
   return normalizeTeamName(profile.team, TEAM_AM);
@@ -4660,7 +5769,7 @@ function canEditWeeklyAllocation(weekIso) {
   if (selectedWeek < currentWeek) return false;
 
   const targetEmployeeId = getAllocationViewEmployeeId();
-  const targetEmployee = state.employeeDirectory.find((e) => e.id === targetEmployeeId) || null;
+  const targetEmployee = lookupActiveEmployee(targetEmployeeId);
   const targetEmail = normalizeEmail(targetEmployee?.email);
 
   // Rule 1: Superadmin allocations can only be edited by the superadmin themselves
@@ -4683,10 +5792,7 @@ function canEditWeeklyAllocation(weekIso) {
   }
 
   // Rule 3: Employees can only edit their own allocations
-  if (targetEmployeeId !== state.currentEmployeeId) return false;
-
-  const dayOfWeek = new Date().getDay();
-  return dayOfWeek === 1 || dayOfWeek === 2;
+  return targetEmployeeId === state.currentEmployeeId;
 }
 
 function setAllocationPolicyNote(message = '', className = 'mini-meta') {
@@ -4759,7 +5865,7 @@ function renderAllocationEmployeeFilterOptions() {
 function renderAllocationClientFilterOptions(rows = []) {
   if (!allocClientFilter) return;
   const current = String(state.allocationClientFilter || 'all');
-  const fromState = state.clients.map((row) => String(row.name || '').trim()).filter(Boolean).filter(n => normalizeClientNameKey(n) !== 'internal');
+  const fromState = state.clients.filter((row) => row.is_active !== false).map((row) => String(row.name || '').trim()).filter(Boolean).filter(n => normalizeClientNameKey(n) !== 'internal');
   const fromRows = rows.map((row) => String(row.client || '').trim()).filter(Boolean).filter(n => normalizeClientNameKey(n) !== 'internal');
   const options = dedupeSortedNames([...fromState, ...fromRows]);
 
@@ -4818,26 +5924,26 @@ function updateAllocationSummary() {
 
   if (isHours) {
     const totalHrs = Math.round((totalPct / 100) * effectiveHours);
-    const freeHrs = Math.round(Math.abs(freePct / 100) * effectiveHours);
+    const label = `${totalHrs} hrs`;
     if (totalPct > 100) {
-      allocSummary.textContent = `Total: ${totalHrs} of ${effectiveHours} hrs (${freeHrs} hrs overbooked)`;
+      allocSummary.textContent = label;
       allocSummary.className = 'status alloc-total error';
     } else if (totalPct > 90) {
-      allocSummary.textContent = `Total: ${totalHrs} of ${effectiveHours} hrs`;
+      allocSummary.textContent = label;
       allocSummary.className = 'status alloc-total warn';
     } else {
-      allocSummary.textContent = `Total: ${totalHrs} of ${effectiveHours} hrs`;
+      allocSummary.textContent = label;
       allocSummary.className = 'status alloc-total';
     }
   } else {
     if (totalPct > 100) {
-      allocSummary.textContent = `Total allocation: ${total}% (${Math.abs(free)}% overbooked)`;
+      allocSummary.textContent = `${total}%`;
       allocSummary.className = 'status alloc-total error';
     } else if (totalPct > 90) {
-      allocSummary.textContent = `Total allocation: ${total}%`;
+      allocSummary.textContent = `${total}%`;
       allocSummary.className = 'status alloc-total warn';
     } else {
-      allocSummary.textContent = `Total allocation: ${total}%`;
+      allocSummary.textContent = `${total}%`;
       allocSummary.className = 'status alloc-total';
     }
   }
@@ -4872,7 +5978,7 @@ function bindAllocationInputListeners() {
 
 function allocationClientOptionsMarkup(selectedClient = '') {
   const selected = String(selectedClient || '').trim();
-  const fromState = state.clients.map((row) => String(row.name || '').trim()).filter(Boolean).filter(n => normalizeClientNameKey(n) !== 'internal');
+  const fromState = state.clients.filter((row) => row.is_active !== false).map((row) => String(row.name || '').trim()).filter(Boolean).filter(n => normalizeClientNameKey(n) !== 'internal');
   const names = dedupeSortedNames(selected ? [...fromState, selected] : fromState);
   const options = ['<option value="">Select client</option>'];
   names.forEach((name) => {
@@ -4911,7 +6017,7 @@ function appendAllocationRow(line, editable) {
   const showPopulate = editable && !isPitch;
   row.dataset.allocationRow = 'line';
   row.dataset.client = clientName.toLowerCase();
-  const populateHtml = showPopulate ? `<span class="populate-wrapper"><button class="ghost small populate-btn" type="button" data-client="${escapeHtml(clientName)}">Copy to\u2026</button><span class="populate-menu hidden" data-client="${escapeHtml(clientName)}"><button type="button" data-populate-scope="next-week" data-client="${escapeHtml(clientName)}">Next Week</button><button type="button" data-populate-scope="month" data-client="${escapeHtml(clientName)}">Rest of Month</button></span></span>` : '';
+  const populateHtml = showPopulate ? `<span class="populate-wrapper"><button class="ghost small populate-btn" type="button" data-client="${escapeHtml(clientName)}">Copy to\u2026</button><span class="populate-menu hidden" data-client="${escapeHtml(clientName)}"><button type="button" data-populate-scope="next-week" data-client="${escapeHtml(clientName)}">Next Week</button><button type="button" data-populate-scope="month" data-client="${escapeHtml(clientName)}">Rest of Month</button><button type="button" data-populate-scope="indefinite" data-client="${escapeHtml(clientName)}">Indefinitely</button></span></span>` : '';
   const deleteHtml = editable ? `<button class="alloc-delete-btn" type="button" title="Remove row">\u00d7</button>` : '';
   row.innerHTML = `
     <td data-label="Client"></td>
@@ -4933,7 +6039,7 @@ function appendAllocationRow(line, editable) {
   defaultOpt.value = '';
   defaultOpt.textContent = 'Select client';
   clientSelect.appendChild(defaultOpt);
-  const fromState = state.clients.map((r) => String(r.name || '').trim()).filter(Boolean).filter(n => normalizeClientNameKey(n) !== 'internal');
+  const fromState = state.clients.filter((r) => r.is_active !== false).map((r) => String(r.name || '').trim()).filter(Boolean).filter(n => normalizeClientNameKey(n) !== 'internal');
   const names = dedupeSortedNames(clientName ? [...fromState, clientName] : fromState);
   names.forEach((name) => {
     const opt = document.createElement('option');
@@ -5022,11 +6128,13 @@ function renderWeeklyAllocationViews() {
   applyAllocationClientRowFilter();
   updateAllocationSummary();
   if (addRow) addRow.disabled = !editable;
+  if (copyLastWeekBtn) copyLastWeekBtn.disabled = !editable;
+  if (copyLastWeekBtn) copyLastWeekBtn.style.display = editable ? '' : 'none';
   if (saveAllocationsBtn) saveAllocationsBtn.disabled = !editable;
 
   const selectedWeek = getSelectedAllocWeekIso();
   const isPast = selectedWeek < getCurrentWeekStartIso();
-  const targetEmployee = state.employeeDirectory.find((e) => e.id === targetEmployeeId) || null;
+  const targetEmployee = lookupActiveEmployee(targetEmployeeId);
   const targetEmail = normalizeEmail(targetEmployee?.email);
   if (isPast) {
     setAllocationPolicyNote('Viewing a past week (read-only).');
@@ -5040,11 +6148,11 @@ function renderWeeklyAllocationViews() {
       setAllocationPolicyNote('You can only edit allocations for people who report to you.');
     }
   } else if (!editable) {
-    setAllocationPolicyNote('Employees can edit weekly allocations on Monday and Tuesday.');
+    setAllocationPolicyNote('You can only edit your own allocations.');
   } else if (managerMode) {
     setAllocationPolicyNote('Manager mode: you can update this employee\'s allocation now.');
   } else {
-    setAllocationPolicyNote('Employee mode: set your weekly allocation on Monday or Tuesday.');
+    setAllocationPolicyNote('Set your weekly allocation below.');
   }
 
   syncAllocViewModeLabels();
@@ -5097,6 +6205,9 @@ async function loadWeeklyAllocationsFromSupabase() {
 
   state.weeklyAllocations = response.data || [];
   renderWeeklyAllocationViews();
+
+  // Load allocation archive (non-blocking)
+  loadAllocArchive().catch(console.error);
 
   const selectedProfileEmployeeId = getSelectedProfileEmployeeId();
   if (targetEmployeeId && selectedProfileEmployeeId && targetEmployeeId === selectedProfileEmployeeId) {
@@ -5242,6 +6353,15 @@ async function populateAllocationForClient(clientName, scope) {
     const nextMonday = new Date(selectedDate);
     nextMonday.setDate(selectedDate.getDate() + 7);
     targetWeeks = [toISODateLocal(nextMonday)];
+  } else if (scope === 'indefinite') {
+    // Generate weekly slots for the next 26 weeks (~6 months)
+    const selectedDate = parseIsoDateLocal(selectedWeek) || new Date(selectedWeek);
+    targetWeeks = [];
+    for (let i = 1; i <= 26; i++) {
+      const d = new Date(selectedDate);
+      d.setDate(selectedDate.getDate() + 7 * i);
+      targetWeeks.push(toISODateLocal(d));
+    }
   } else {
     // 'month' — all remaining weeks in the selected month
     const mw = allocMonthWindow();
@@ -5279,14 +6399,14 @@ async function populateAllocationForClient(clientName, scope) {
   if (conflicting.length > 0 && alreadyMatching.length === 0 && conflicting.length === targetWeeks.length) {
     // All target weeks already have the same different value — show conflict
     const weekLabels = conflicting.map(r => `${formatWeekRangeLabel(r.period_start)} (${r.allocation_percent}%)`).join(', ');
-    const ok = confirm(`${clientName} already has allocations for ${weekLabels}. Overwrite with ${newPct}%?`);
+    const ok = await colonyConfirm(`${clientName} already has allocations for ${weekLabels}. Overwrite with ${newPct}%?`);
     if (!ok) {
       setAllocationPolicyNote('Populate cancelled.');
       return;
     }
   } else if (conflicting.length > 0) {
     const weekLabels = conflicting.map(r => `${formatWeekRangeLabel(r.period_start)} (${r.allocation_percent}%)`).join(', ');
-    const ok = confirm(`${clientName} has different allocations for: ${weekLabels}. Overwrite with ${newPct}%?`);
+    const ok = await colonyConfirm(`${clientName} has different allocations for: ${weekLabels}. Overwrite with ${newPct}%?`);
     if (!ok) {
       setAllocationPolicyNote('Populate cancelled.');
       return;
@@ -5302,13 +6422,14 @@ async function populateAllocationForClient(clientName, scope) {
     // Skip weeks that already match
     if (alreadyMatching.some(r => r.period_start === weekIso)) continue;
 
-    await state.supabase
+    const delResult = await state.supabase
       .from('allocations')
       .delete()
       .eq('employee_id', targetEmployeeId)
       .eq('project_id', projectId)
       .eq('period_type', 'week')
       .eq('period_start', weekIso);
+    if (delResult.error) { console.error('Alloc delete failed:', delResult.error.message); continue; }
 
     const insert = await state.supabase.from('allocations').insert({
       employee_id: targetEmployeeId,
@@ -5323,7 +6444,7 @@ async function populateAllocationForClient(clientName, scope) {
     populatedCount++;
   }
 
-  const label = scope === 'next-week' ? 'next week' : `${populatedCount} week${populatedCount > 1 ? 's' : ''}`;
+  const label = scope === 'next-week' ? 'next week' : scope === 'indefinite' ? `${populatedCount} weeks (~6 months)` : `${populatedCount} week${populatedCount > 1 ? 's' : ''}`;
   setAllocationPolicyNote(`${clientName} allocation (${newPct}%) copied to ${label}.`);
 }
 
@@ -5411,7 +6532,7 @@ if (allocClientFilter) {
 if (addRow && allocationTable) {
   addRow.addEventListener('click', () => {
     if (!canEditWeeklyAllocation()) {
-      setAllocationPolicyNote('You can edit weekly allocation on Monday or Tuesday.');
+      setAllocationPolicyNote('You can only edit your own allocations.');
       return;
     }
     if (state.allocationClientFilter !== 'all') {
@@ -5435,7 +6556,7 @@ if (addRow && allocationTable) {
 if (saveAllocationsBtn) {
   saveAllocationsBtn.addEventListener('click', async () => {
     if (!canEditWeeklyAllocation()) {
-      setAllocationPolicyNote('You can edit weekly allocation on Monday or Tuesday.');
+      setAllocationPolicyNote('You can only edit your own allocations.');
       return;
     }
 
@@ -5453,8 +6574,6 @@ if (saveAllocationsBtn) {
     try {
       const syncResult = await persistAllocationsToSupabase();
       if (syncResult.synced && allocSummary) {
-        const base = allocSummary.textContent.split('|')[0].trim();
-        allocSummary.textContent = `${base} | Saved ${syncResult.count} line(s).`;
         allocSummary.className = 'status alloc-total';
       }
       saveAllocationsBtn.textContent = 'Saved!';
@@ -5477,6 +6596,188 @@ if (saveAllocationsBtn) {
   });
 }
 
+// Copy from last week button
+const copyLastWeekBtn = document.getElementById('copyLastWeekBtn');
+if (copyLastWeekBtn) {
+  copyLastWeekBtn.addEventListener('click', async () => {
+    if (!canEditWeeklyAllocation()) {
+      setAllocationPolicyNote('You can only edit your own allocations.');
+      return;
+    }
+    const targetEmployeeId = getAllocationViewEmployeeId();
+    if (!targetEmployeeId || !state.supabase) return;
+
+    // Determine previous week
+    const currentWeekIso = getSelectedAllocWeekIso();
+    const prevDate = parseIsoDateLocal(currentWeekIso);
+    if (!prevDate) return;
+    prevDate.setDate(prevDate.getDate() - 7);
+    const prevWeekIso = toISODateLocal(prevDate);
+
+    copyLastWeekBtn.disabled = true;
+    copyLastWeekBtn.textContent = 'Loading…';
+
+    try {
+      const resp = await state.supabase
+        .from('allocations')
+        .select('allocation_percent, project:projects!allocations_project_id_fkey ( name )')
+        .eq('employee_id', targetEmployeeId)
+        .eq('period_type', 'week')
+        .eq('period_start', prevWeekIso)
+        .order('updated_at', { ascending: true });
+
+      if (resp.error) throw resp.error;
+      const prevRows = (resp.data || [])
+        .map(r => ({ client: r.project?.name || '', allocation_percent: r.allocation_percent, updated_at: '' }))
+        .filter(r => r.client && !isGarbageProjectName(r.client));
+
+      if (!prevRows.length) {
+        setAllocationPolicyNote('No allocations found for the previous week.');
+        return;
+      }
+
+      // Clear current table and populate with previous week's data
+      // allocationTable is already the <tbody> (see line 5094), not the <table>
+      allocationTable.innerHTML = '';
+      if (state.allocationClientFilter !== 'all') {
+        state.allocationClientFilter = 'all';
+        if (allocClientFilter) allocClientFilter.value = 'all';
+      }
+      prevRows.forEach(line => appendAllocationRow(line, true));
+      bindAllocationInputListeners();
+      applyAllocationClientRowFilter();
+      updateAllocationSummary();
+      setAllocationPolicyNote('Copied from last week. Review and save when ready.');
+    } catch (err) {
+      console.error(err);
+      setAllocationPolicyNote(`Unable to copy: ${err.message}`);
+    } finally {
+      copyLastWeekBtn.disabled = false;
+      copyLastWeekBtn.textContent = '← Copy from last week';
+    }
+  });
+}
+
+// Suggest allocations from this week's task planner (distribution logic is
+// pure + tested: suggestAllocationsFromTasks, js/alloc.js). Suggestion only —
+// nothing saves until the user hits Save Allocation.
+const suggestFromTasksBtn = document.getElementById('suggestFromTasksBtn');
+if (suggestFromTasksBtn) {
+  suggestFromTasksBtn.addEventListener('click', async () => {
+    if (!canEditWeeklyAllocation()) {
+      setAllocationPolicyNote('You can only edit your own allocations.');
+      return;
+    }
+    const targetEmployeeId = getAllocationViewEmployeeId();
+    if (!targetEmployeeId || !state.supabase) return;
+    const weekIso = getSelectedAllocWeekIso();
+    if (!weekIso) return;
+
+    suggestFromTasksBtn.disabled = true;
+    suggestFromTasksBtn.textContent = 'Reading tasks…';
+    try {
+      const resp = await state.supabase
+        .from('daily_tasks')
+        .select('task_date, status, notes')
+        .eq('employee_id', targetEmployeeId)
+        .neq('status', 'archived');
+      if (resp.error) throw resp.error;
+
+      const suggested = suggestAllocationsFromTasks(resp.data || [], weekIso)
+        .filter(r => !isGarbageProjectName(r.client));
+      if (!suggested.length) {
+        setAllocationPolicyNote('No active tasks tagged to clients this week — nothing to suggest.');
+        return;
+      }
+
+      allocationTable.innerHTML = '';
+      if (state.allocationClientFilter !== 'all') {
+        state.allocationClientFilter = 'all';
+        if (allocClientFilter) allocClientFilter.value = 'all';
+      }
+      suggested.forEach(line => appendAllocationRow({ client: line.client, allocation_percent: line.percent, updated_at: '' }, true));
+      bindAllocationInputListeners();
+      applyAllocationClientRowFilter();
+      updateAllocationSummary();
+      const totalTasks = suggested.reduce((s, r) => s + r.tasks, 0);
+      setAllocationPolicyNote(`Suggested from ${totalTasks} task${totalTasks === 1 ? '' : 's'} across ${suggested.length} client${suggested.length === 1 ? '' : 's'} — task counts are a proxy, so adjust to reality and save.`);
+    } catch (err) {
+      console.error(err);
+      setAllocationPolicyNote(`Unable to suggest: ${err.message}`);
+    } finally {
+      suggestFromTasksBtn.disabled = false;
+      suggestFromTasksBtn.textContent = '✦ Suggest from tasks';
+    }
+  });
+}
+
+// ── Allocation Archive ──
+const allocArchiveContainer = document.getElementById('allocArchiveContainer');
+
+async function loadAllocArchive() {
+  if (!allocArchiveContainer || !state.supabase || !state.isAuthenticated) return;
+  const targetEmployeeId = getAllocationViewEmployeeId();
+  if (!targetEmployeeId) return;
+
+  const currentWeekIso = getCurrentWeekStartIso();
+
+  // Fetch last 8 weeks of past allocations
+  const eightWeeksAgo = new Date();
+  eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+  const resp = await state.supabase
+    .from('allocations')
+    .select('period_start, allocation_percent, project:projects!allocations_project_id_fkey ( name )')
+    .eq('employee_id', targetEmployeeId)
+    .eq('period_type', 'week')
+    .lt('period_start', currentWeekIso)
+    .gte('period_start', toISODateLocal(eightWeeksAgo))
+    .order('period_start', { ascending: false })
+    .order('updated_at', { ascending: true });
+
+  if (resp.error) {
+    allocArchiveContainer.innerHTML = '<p class="mini-meta">Unable to load archive.</p>';
+    return;
+  }
+
+  // Group by week
+  const weekMap = new Map();
+  (resp.data || []).forEach(row => {
+    const week = row.period_start;
+    if (!weekMap.has(week)) weekMap.set(week, []);
+    const name = row.project?.name || 'Unassigned';
+    if (!isGarbageProjectName(name)) {
+      weekMap.get(week).push({ client: name, pct: row.allocation_percent });
+    }
+  });
+
+  if (!weekMap.size) {
+    allocArchiveContainer.innerHTML = '<p class="mini-meta">No past allocation data.</p>';
+    return;
+  }
+
+  let html = '';
+  const sortedWeeks = [...weekMap.keys()].sort((a, b) => b.localeCompare(a));
+  sortedWeeks.forEach(week => {
+    const lines = weekMap.get(week);
+    const total = lines.reduce((s, l) => s + (l.pct || 0), 0);
+    const weekLabel = formatWeekRangeLabel(week);
+    const lineItems = lines
+      .sort((a, b) => b.pct - a.pct)
+      .map(l => `<span class="alloc-archive-item">${escapeHtml(l.client)} <strong>${Math.round(l.pct)}%</strong></span>`)
+      .join('');
+    html += `
+      <div class="alloc-archive-week">
+        <div class="alloc-archive-header">
+          <span class="alloc-archive-label">Week of ${weekLabel}</span>
+          <span class="alloc-archive-total">${Math.round(total)}% used</span>
+        </div>
+        <div class="alloc-archive-items">${lineItems}</div>
+      </div>`;
+  });
+
+  allocArchiveContainer.innerHTML = html;
+}
+
 // Delegated click handler for per-row populate button + menu
 const allocationTableEl = document.getElementById('allocationTable');
 if (allocationTableEl) {
@@ -5488,7 +6789,7 @@ if (allocationTableEl) {
       if (!row) return;
       const clientSelect = row.querySelector('select');
       const clientName = clientSelect?.value || 'this row';
-      if (!confirm(`Remove ${clientName} from this week's allocation?`)) return;
+      if (!await colonyConfirm(`Remove ${clientName} from this week's allocation?`)) return;
       row.remove();
       updateAllocationSummary();
       applyAllocationClientRowFilter();
@@ -5535,12 +6836,24 @@ if (allocationTableEl) {
     const mainBtn = wrapper?.querySelector('.populate-btn');
     const menu = scopeBtn.closest('.populate-menu');
     if (menu) menu.classList.add('hidden');
-    if (mainBtn) mainBtn.disabled = true;
+    if (mainBtn) {
+      mainBtn.disabled = true;
+      mainBtn.textContent = 'Copying\u2026';
+    }
     try {
       await populateAllocationForClient(clientName, scope);
+      if (mainBtn) {
+        mainBtn.textContent = scope === 'next-week' ? 'Copied to next week \u2713' : scope === 'indefinite' ? 'Copied indefinitely \u2713' : 'Copied to month \u2713';
+        mainBtn.classList.add('populate-success');
+        setTimeout(() => {
+          mainBtn.textContent = 'Copy to\u2026';
+          mainBtn.classList.remove('populate-success');
+        }, 2500);
+      }
     } catch (error) {
       console.error(error);
       setAllocationPolicyNote(`Populate failed: ${error.message}`);
+      if (mainBtn) mainBtn.textContent = 'Copy to\u2026';
     } finally {
       if (mainBtn) mainBtn.disabled = false;
     }
@@ -5616,13 +6929,7 @@ const seeAllLeavesBtn = document.getElementById('seeAllLeavesBtn');
 const profileLeaveSummaryNotice = document.getElementById('profileLeaveSummaryNotice');
 let leaveRequestSeq = 0;
 
-function leaveDayText(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '0';
-  const rounded = Math.round(numeric * 100) / 100;
-  if (Number.isInteger(rounded)) return String(rounded);
-  return rounded.toFixed(2).replace(/\.?0+$/, '');
-}
+// leaveDayText lives in js/leave.js
 
 function setLeaveBalanceNotice(message = '', className = 'mini-meta') {
   if (!leaveBalanceNotice) return;
@@ -5630,17 +6937,7 @@ function setLeaveBalanceNotice(message = '', className = 'mini-meta') {
   leaveBalanceNotice.textContent = message;
 }
 
-function emptyLeaveSummary() {
-  return {
-    cycle_label: 'Apr-Mar',
-    cycle_start: null,
-    cycle_end: null,
-    pl: { allocated: 8, applied: 0, taken: 0, remaining: 8 },
-    cl: { allocated: 8, applied: 0, taken: 0, remaining: 8 },
-    sl: { allocated: 12, applied: 0, taken: 0, remaining: 12 },
-    archive: []
-  };
-}
+// emptyLeaveSummary lives in js/leave.js
 
 function renderLeaveArchiveRows(entries = []) {
   if (!leaveArchiveBody) return;
@@ -5736,32 +7033,124 @@ async function loadLeaveCycleSummaryFromSupabase() {
   setLeaveBalanceNotice('Leave balances are loaded from the active leave cycle.');
 }
 
-function businessDayCount(startDate, endDate) {
-  let count = 0;
-  const cur = new Date(startDate);
-  while (cur <= endDate) {
-    const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) count++;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return count;
+// calendarDayCount lives in js/leave.js
+
+// formatShortDate lives in js/leave.js
+
+// formatLeaveDateRange lives in js/leave.js
+
+// ── Notification bell (top bar): action-required items, computed live ──
+// Item building is pure (buildActionItems, js/notify.js, tested); this renders
+// the badge + dropdown. Refreshed whenever leave rows land (renderLeaveRows).
+// Cheap personal signals for the bell (invoice window, policy ack) — loaded at
+// sign-in alongside the main data fan-out and after relevant user actions.
+async function loadNotifySignals() {
+  if (!state.supabase || !state.currentEmployeeId) { state.notifySignals = null; return; }
+  const signals = { invoiceDue: false, policyAckPending: false, featureReplies: [] };
+  try {
+    const myEmail = normalizeEmail(state.employeeProfile?.email || '');
+    const inWindow = new Date().getDate() >= 25;
+    const excluded = getInvoiceExcludedEmails().includes(myEmail);
+    const tracked = state.employeeProfile?.department?.leave_tracking_enabled !== false;
+    const since = new Date(Date.now() - 14 * 86400000).toISOString();
+    const [invRes, ackRes, replyRes] = await Promise.all([
+      (inWindow && !excluded && tracked)
+        ? state.supabase.from('invoices').select('id', { count: 'exact', head: true })
+            .eq('employee_id', state.currentEmployeeId).eq('invoice_month', currentInvoiceMonth())
+        : Promise.resolve({ count: 1, error: null }),
+      state.supabase.from('policy_acknowledgments').select('id', { count: 'exact', head: true })
+        .eq('employee_id', state.currentEmployeeId).eq('policy_key', 'remote_working_policy'),
+      // replies on MY requests by other people, recent window
+      state.supabase.from('feature_request_replies')
+        .select('id, created_at, replier:employees!feature_request_replies_employee_id_fkey(full_name), request:feature_requests!feature_request_replies_feature_request_id_fkey!inner(employee_id, request_text)')
+        .eq('request.employee_id', state.currentEmployeeId)
+        .neq('employee_id', state.currentEmployeeId)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(10)
+    ]);
+    signals.invoiceDue = !invRes.error && (invRes.count || 0) === 0;
+    signals.policyAckPending = !ackRes.error && (ackRes.count || 0) === 0;
+    if (!replyRes.error) {
+      signals.featureReplies = (replyRes.data || []).map(r => ({
+        id: r.id,
+        replierName: r.replier?.full_name || 'Someone',
+        requestText: r.request?.request_text || '',
+        createdAt: r.created_at
+      }));
+    }
+  } catch (err) { console.warn('Notify signals load failed:', err); }
+  state.notifySignals = signals;
+  refreshNotifyBell();
 }
 
-function formatShortDate(inputDate) {
-  if (!inputDate) return '';
-  const [year, month, day] = inputDate.split('-').map(Number);
-  if (!year || !month || !day) return '';
-  const dt = new Date(year, month - 1, day);
-  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+const NOTIFY_SEEN_LS_KEY = 'colony_notify_seen_v1';
+function notifySeenKeys() {
+  try { return new Set(JSON.parse(localStorage.getItem(NOTIFY_SEEN_LS_KEY) || '[]')); } catch (e) { return new Set(); }
+}
+function markNotifyItemsSeen(items) {
+  try {
+    const seen = notifySeenKeys();
+    items.forEach(i => seen.add(i.key));
+    localStorage.setItem(NOTIFY_SEEN_LS_KEY, JSON.stringify([...seen].slice(-200)));
+  } catch (e) { /* private mode etc. */ }
 }
 
-function formatLeaveDateRange(startValue, endValue) {
-  const start = formatShortDate(startValue);
-  const end = formatShortDate(endValue);
-  if (!start) return '';
-  if (!end || start === end) return start;
-  return `${start} – ${end}`;
+function currentNotifyItems() {
+  return state.isAuthenticated ? buildActionItems({
+    myEmail: state.employeeProfile?.email || state.session?.user?.email || '',
+    myEmployeeId: state.currentEmployeeId,
+    isSuperadmin: isSuperadminUser(),
+    leaveRows: state.leaveRowsById ? [...state.leaveRowsById.values()] : [],
+    todayIso: toISODateLocal(),
+    signals: state.notifySignals
+  }) : [];
 }
+
+function refreshNotifyBell() {
+  const badge = document.getElementById('notifyBadge');
+  const list = document.getElementById('notifyPanelList');
+  if (!badge || !list) return;
+  const items = currentNotifyItems();
+  // Badge counts UNSEEN only; opening the panel marks everything seen.
+  const unseen = countUnseenItems(items, notifySeenKeys());
+  badge.textContent = String(unseen);
+  badge.classList.toggle('hidden', unseen === 0);
+  list.innerHTML = items.length
+    ? items.map(i => `<div class="notify-item" data-notify-screen="${escapeHtml(i.screen)}">
+        <div class="notify-item-text">${escapeHtml(i.icon)} ${escapeHtml(i.text)}</div>
+        <div class="notify-item-detail">${escapeHtml(i.detail)}</div>
+      </div>`).join('')
+    : '<div class="notify-empty">All caught up — nothing needs your action.</div>';
+}
+
+(function wireNotifyBell() {
+  const bell = document.getElementById('notifyBellBtn');
+  const panel = document.getElementById('notifyPanel');
+  if (!bell || !panel) return;
+  bell.addEventListener('click', (e) => {
+    e.stopPropagation();
+    refreshNotifyBell();
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      // Expanding the panel marks everything as read (badge clears; items stay)
+      markNotifyItemsSeen(currentNotifyItems());
+      const badge = document.getElementById('notifyBadge');
+      if (badge) badge.classList.add('hidden');
+    }
+  });
+  panel.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-notify-screen]');
+    if (!item) return;
+    panel.classList.add('hidden');
+    navigateToScreen(item.dataset.notifyScreen);
+  });
+  document.addEventListener('click', (e) => {
+    if (!panel.classList.contains('hidden') && !panel.contains(e.target) && e.target !== bell) {
+      panel.classList.add('hidden');
+    }
+  });
+})();
 
 function refreshLeavePendingCount() {
   if (!leaveApprovalTableBody || !pendingApprovalCount) return;
@@ -5859,12 +7248,7 @@ function addLeaveRequestToTables({ employee, type, dates }) {
   return requestId;
 }
 
-function leaveStatusMeta(status) {
-  if (status === 'approved') return { chipClass: 'approved', label: 'Approved' };
-  if (status === 'rejected') return { chipClass: 'rejected', label: 'Rejected' };
-  if (status === 'cancelled') return { chipClass: 'warn', label: 'Cancelled' };
-  return { chipClass: 'pending', label: 'Pending' };
-}
+// leaveStatusMeta lives in js/leave.js
 
 function formatDecisionText(row) {
   if (!row.decided_at) return '--';
@@ -5889,9 +7273,10 @@ function renderHolidaysToCalendar() {
   calendarBody.innerHTML = '';
   const todayStr = toISODateLocal(new Date());
 
+  const allHolidays = getPublicHolidays();
   const holidays = showAllHolidays
-    ? PUBLIC_HOLIDAYS_2026
-    : PUBLIC_HOLIDAYS_2026.filter((h) => h.date >= todayStr).slice(0, 3);
+    ? allHolidays
+    : allHolidays.filter((h) => h.date >= todayStr).slice(0, 3);
 
   if (!holidays.length) {
     const emptyRow = document.createElement('tr');
@@ -5933,6 +7318,7 @@ if (holidayToggleBtn) {
 function renderLeaveRows(rows) {
   clearRenderedLeaveRows();
   state.leaveRowsById = new Map((rows || []).map((row) => [row.id, row]));
+  refreshNotifyBell();
 
   // Render holidays into their own table
   renderHolidaysToCalendar();
@@ -5982,19 +7368,23 @@ function renderLeaveRows(rows) {
 
   function buildApprovalRow(row) {
     const employeeName = displayPersonName(row.employee?.full_name || state.currentEmployee || 'Employee', 'Employee');
-    const dateLabel = formatLeaveDateRange(row.start_date, row.end_date);
+    const dateLabel = formatLeaveDateRange(row.start_date, row.end_date) + (row.is_half_day ? ' (½ day)' : '');
     const statusMeta = leaveStatusMeta(row.status);
     const requesterAccessLevel = normalizeAccessLevel(row.employee?.access_level || 'employee');
     const requiresSuperadminDecision = requesterAccessLevel === 'leadership';
+    // Decisions belong to the ROUTED approver (direct manager) + superadmin —
+    // not leadership-wide. Everyone in leadership still SEES the table.
+    const routedToMe = approverEmailList(row.approver_emails)
+      .includes(normalizeEmail(state.employeeProfile?.email || state.session?.user?.email || ''));
     const canDecide =
-      isLeadershipRole() &&
       row.status === 'pending' &&
+      (routedToMe || isSuperadminUser()) &&
       (!requiresSuperadminDecision || isSuperadminUser());
     const tr = document.createElement('tr');
     tr.dataset.requestId = row.id;
     tr.innerHTML = `
-      <td data-label="Employee">${employeeName}</td>
-      <td data-label="Type">${row.leave_type}</td>
+      <td data-label="Employee">${escapeHtml(employeeName)}</td>
+      <td data-label="Type">${escapeHtml(row.leave_type)}</td>
       <td data-label="Dates">${dateLabel}</td>
       <td data-label="Status" class="leave-approval-status"><span class="chip ${statusMeta.chipClass}">${statusMeta.label}</span></td>
       <td data-label="Action">
@@ -6059,14 +7449,14 @@ function renderLeaveRows(rows) {
 
   function buildTeamLeaveRow(row) {
     const employeeName = displayPersonName(row.employee?.full_name || state.currentEmployee || 'Employee', 'Employee');
-    const dateLabel = formatLeaveDateRange(row.start_date, row.end_date);
+    const dateLabel = formatLeaveDateRange(row.start_date, row.end_date) + (row.is_half_day ? ' (½ day)' : '');
     const statusMeta = leaveStatusMeta(row.status);
     const tr = document.createElement('tr');
     tr.dataset.requestId = row.id;
     tr.innerHTML = `
       <td data-label="Date">${dateLabel}</td>
-      <td data-label="Person">${employeeName}</td>
-      <td data-label="Type">${row.leave_type}</td>
+      <td data-label="Person">${escapeHtml(employeeName)}</td>
+      <td data-label="Type">${escapeHtml(row.leave_type)}</td>
       <td data-label="Status"><span class="chip ${statusMeta.chipClass} leave-calendar-status">${statusMeta.label}</span></td>
     `;
     return tr;
@@ -6130,6 +7520,7 @@ async function loadLeaveRequestsFromSupabase() {
       start_date,
       end_date,
       reason,
+      is_half_day,
       status,
       approver_emails,
       created_at,
@@ -6141,7 +7532,8 @@ async function loadLeaveRequestsFromSupabase() {
         access_level
       )
     `)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(2000);
 
   if (leaveRowsResult.error) {
     console.error(leaveRowsResult.error);
@@ -6188,7 +7580,7 @@ function buildLeaveSnapshotRow(emp, summaryMap, nextLeaveMap) {
   const tr = document.createElement('tr');
   if (totalRemaining <= 0) tr.className = 'leave-row-warning';
   tr.innerHTML = `
-    <td data-label="Name">${escapeHtml(emp.full_name || '--')}</td>
+    <td data-label="Name">${escapeHtml(displayPersonName(emp.full_name, '--'))}</td>
     <td data-label="PL Rem.">${leaveDayText(plRem)}</td>
     <td data-label="CL Rem.">${leaveDayText(clRem)}</td>
     <td data-label="SL Rem." class="${slRem < 0 ? 'leave-negative' : ''}">${leaveDayText(slRem)}</td>
@@ -6304,8 +7696,15 @@ if (seeAllLeavesBtn) {
   seeAllLeavesBtn.addEventListener('click', async () => {
     seeAllLeavesBtn.disabled = true;
     seeAllLeavesBtn.textContent = 'Loading...';
-    await loadAllEmployeeLeaveSnapshot();
-    seeAllLeavesBtn.textContent = 'Showing all employees';
+    try {
+      await loadAllEmployeeLeaveSnapshot();
+      seeAllLeavesBtn.textContent = 'Showing all employees';
+    } catch (err) {
+      console.error('Failed to load all employee leave snapshot:', err);
+      seeAllLeavesBtn.textContent = 'See all employees';
+    } finally {
+      seeAllLeavesBtn.disabled = false;
+    }
   });
 }
 
@@ -6368,19 +7767,24 @@ function updateLeaveHint() {
     return;
   }
 
-  const days = businessDayCount(start, end);
-  const type = leaveType.value;
-
-  if (days === 0) {
-    leaveRuleHint.textContent = 'Selected range has no working days (weekends only).';
+  // Policy rule lives in js/leave.js (leavePolicyCheck, unit-tested).
+  // Calendar-day counting per policy: Fri→Mon = 4 days.
+  const halfDayEl = document.getElementById('leaveHalfDay');
+  const halfDay = Boolean(halfDayEl?.checked);
+  if (halfDay && startValue !== endValue) {
+    leaveRuleHint.textContent = 'Half day applies to single-day requests only — match the start and end date.';
     leaveRuleHint.className = 'status warn';
-  } else if (type === 'SL' && days >= 3) {
-    leaveRuleHint.textContent = `Policy check: SL for ${days} working day(s) requires medical certificate.`;
-    leaveRuleHint.className = 'status warn';
-  } else {
-    leaveRuleHint.textContent = `Policy check: ${type} request for ${days} working day(s) is valid.`;
-    leaveRuleHint.className = 'status';
+    return;
   }
+  let days = calendarDayCount(start, end);
+  if (halfDay && days === 1) days = 0.5;
+  const check = leavePolicyCheck(leaveType.value, days);
+  leaveRuleHint.textContent = check.text;
+  leaveRuleHint.className = check.level === 'warn' ? 'status warn' : 'status';
+}
+
+if (document.getElementById('leaveHalfDay')) {
+  document.getElementById('leaveHalfDay').addEventListener('change', updateLeaveHint);
 }
 
 [leaveType, leaveStart, leaveEnd].forEach((el) => {
@@ -6445,7 +7849,8 @@ if (submitLeaveBtn) {
           p_start_date: leaveStart?.value,
           p_end_date: leaveEnd?.value,
           p_reason: reason || null,
-          p_medical_certificate_url: medicalCertificateUrl || null
+          p_medical_certificate_url: medicalCertificateUrl || null,
+          p_is_half_day: Boolean(document.getElementById('leaveHalfDay')?.checked) && leaveStart?.value === leaveEnd?.value
         });
 
         if (leaveResult.error) {
@@ -6501,6 +7906,22 @@ if (leaveApprovalTableBody) {
     const statusClass = approved ? 'approved' : 'rejected';
     const label = approved ? 'Approved' : 'Rejected';
     const decision = `${label} by leadership on ${formatTimestamp()}`;
+
+    // Routed-approver-only guard (matches buildApprovalRow + the RLS policy):
+    // decisions belong to the request's approver_emails + superadmin.
+    if (state.isAuthenticated) {
+      const leaveRow = state.leaveRowsById?.get(requestId);
+      const routedToMe = approverEmailList(leaveRow?.approver_emails || [])
+        .includes(normalizeEmail(state.employeeProfile?.email || ''));
+      if (leaveRow && !routedToMe && !isSuperadminUser()) {
+        if (leaveApprovalNotice) {
+          const approverList = approverEmailList(leaveRow.approver_emails).join(', ') || 'their manager';
+          leaveApprovalNotice.textContent = `This request is routed to ${approverList} — only they (or the superadmin) can decide it.`;
+          leaveApprovalNotice.className = 'status warn';
+        }
+        return;
+      }
+    }
 
     actionBtn.disabled = true;
     const origActionText = actionBtn.textContent;
@@ -6559,10 +7980,10 @@ const weekPrevBtn = document.getElementById('weekPrev');
 const weekNextBtn = document.getElementById('weekNext');
 const weekLabelEl = document.getElementById('weekLabel');
 const matrixSearch = document.getElementById('matrixSearch');
-const teamSummaryStrip = document.getElementById('teamSummaryStrip');
-const matrixHead = document.getElementById('matrixHead');
-const matrixBody = document.getElementById('matrixBody');
+const plannerPeopleView = document.getElementById('plannerPeopleView');
+const plannerClientView = document.getElementById('plannerClientView');
 const teamDashboardScopeNote = document.getElementById('teamDashboardScopeNote');
+let _plannerActiveView = 'people'; // 'people' | 'clients'
 const portfolioTableBody = document.getElementById('portfolioTableBody');
 const newClientName = document.getElementById('newClientName');
 const newClientType = document.getElementById('newClientType');
@@ -6576,9 +7997,7 @@ function addMonths(dateValue, months) {
   return new Date(dateValue.getFullYear(), dateValue.getMonth() + months, 1);
 }
 
-function formatPlannerMonthLabel(dateValue) {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(dateValue);
-}
+// formatPlannerMonthLabel lives in js/alloc.js
 
 function populatePlannerMonthOptions() {
   if (!plannerMonth) return;
@@ -6612,57 +8031,15 @@ function setTeamDashboardScopeNote(message = '', className = 'mini-meta') {
 }
 
 function plannerMonthWindow() {
-  const raw = String(plannerMonth?.value || '').trim();
-  const match = raw.match(/^(\d{4})-(\d{2})$/);
-  const base = new Date();
-  const year = match ? Number(match[1]) : base.getFullYear();
-  const month = match ? Number(match[2]) : base.getMonth() + 1;
-  const monthStartDate = new Date(year, month - 1, 1);
-  const monthEndDate = new Date(year, month, 0);
-  return {
-    monthStartDate,
-    monthEndDate,
-    monthStartIso: toISODateLocal(monthStartDate),
-    monthEndIso: toISODateLocal(monthEndDate),
-    monthLabel: formatPlannerMonthLabel(monthStartDate)
-  };
+  // Pure math lives in js/alloc.js; this just reads the month <select>.
+  return monthWindowFor(plannerMonth?.value);
 }
 
-function plannerWeekStartsForMonth(monthWindow) {
-  const starts = [];
-  const cursor = mondayWeekStartDate(monthWindow.monthStartDate);
+// plannerWeekStartsForMonth lives in js/alloc.js
 
-  while (cursor <= monthWindow.monthEndDate) {
-    if (cursor >= monthWindow.monthStartDate) {
-      starts.push(toISODateLocal(cursor));
-    }
-    cursor.setDate(cursor.getDate() + 7);
-  }
+// shortWeekLabel lives in js/alloc.js
 
-  if (!starts.length) {
-    starts.push(getCurrentWeekStartIso());
-  }
-
-  return starts.sort((a, b) => String(a).localeCompare(String(b)));
-}
-
-function shortWeekLabel(weekStartIso) {
-  const parsed = parseIsoDateLocal(weekStartIso);
-  if (!parsed) return 'W-';
-  const { week } = isoWeekMetaFromDate(parsed);
-  return `W${week}`;
-}
-
-function utilizationStatusMeta(value) {
-  const numeric = Number(value) || 0;
-  if (numeric > 100) {
-    return { key: 'over', label: 'Over', chipClass: 'rejected' };
-  }
-  if (numeric < 60) {
-    return { key: 'under', label: 'Under', chipClass: 'warn' };
-  }
-  return { key: 'balanced', label: 'Balanced', chipClass: 'approved' };
-}
+// utilizationStatusMeta lives in js/alloc.js
 
 function formatUtilPercentCompact(value, { zeroAsDash = false } = {}) {
   const numeric = Number(value);
@@ -6708,19 +8085,12 @@ function formatWeekSpread(weekStarts = [], totalsByWeek = new Map()) {
 }
 
 function renderTeamDashboardEmpty(message = 'No allocation data yet.') {
-  if (matrixBody) {
-    matrixBody.innerHTML = `<tr><td colspan="3">${escapeHtml(message)}</td></tr>`;
-  }
-  if (matrixHead) {
-    matrixHead.innerHTML = '<tr><th></th><th>Total</th><th>Free</th></tr>';
-  }
-  if (teamSummaryStrip) {
-    teamSummaryStrip.innerHTML = '';
-  }
+  if (plannerPeopleView) plannerPeopleView.innerHTML = `<p class="mini-meta" style="padding:var(--space-3)">${escapeHtml(message)}</p>`;
+  if (plannerClientView) plannerClientView.innerHTML = '';
 }
 
 function renderResourceMatrix(teamMembers, allocationRows, weekStarts, monthLabel) {
-  if (!matrixBody || !matrixHead) return;
+  if (!plannerPeopleView) return;
 
   if (!teamMembers.length) {
     renderTeamDashboardEmpty('No reportees mapped for this leadership user yet.');
@@ -6728,202 +8098,7 @@ function renderResourceMatrix(teamMembers, allocationRows, weekStarts, monthLabe
     return;
   }
 
-  // On mobile, render card layout instead of wide table
-  if (window.matchMedia('(max-width: 768px)').matches) {
-    renderResourceMatrixMobile(teamMembers, allocationRows, weekStarts, monthLabel);
-    return;
-  }
-
-  // Build per-employee per-week per-project data
-  const empWeekProjectAlloc = new Map(); // employeeId -> Map(weekIso -> Map(projectName -> percent))
-
-  teamMembers.forEach((emp) => {
-    empWeekProjectAlloc.set(emp.id, new Map());
-    weekStarts.forEach((ws) => {
-      empWeekProjectAlloc.get(emp.id).set(ws, new Map());
-    });
-  });
-
-  (allocationRows || []).forEach((row) => {
-    const weekMap = empWeekProjectAlloc.get(row.employee_id);
-    if (!weekMap) return;
-    const projName = String(row.project?.name || 'Unassigned').trim();
-    if (isGarbageProjectName(projName)) return;
-    const value = Number(row.allocation_percent) || 0;
-    const weekIso = String(row.period_start || '').trim();
-    if (weekMap.has(weekIso)) {
-      const projWeekMap = weekMap.get(weekIso);
-      projWeekMap.set(projName, (projWeekMap.get(projName) || 0) + value);
-    }
-  });
-
-  // Determine which week to display
-  const currentWeekIso = toISODateLocal(mondayWeekStartDate());
-  if (state._matrixSelectedWeekIndex == null) {
-    const currentIdx = weekStarts.indexOf(currentWeekIso);
-    state._matrixSelectedWeekIndex = currentIdx >= 0 ? currentIdx : 0;
-  }
-  const selectedIdx = Math.max(0, Math.min(state._matrixSelectedWeekIndex, weekStarts.length - 1));
-  const selectedWeek = weekStarts[selectedIdx] || currentWeekIso;
-
-  // Update week navigator label and buttons
-  if (weekLabelEl) {
-    const weekDate = new Date(selectedWeek + 'T00:00:00');
-    const monthDay = weekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    weekLabelEl.textContent = `Week of ${monthDay}`;
-  }
-  if (weekPrevBtn) weekPrevBtn.disabled = selectedIdx <= 0;
-  if (weekNextBtn) weekNextBtn.disabled = selectedIdx >= weekStarts.length - 1;
-
-  // Build per-employee allocations for the selected week only
-  const empProjectAlloc = new Map(); // employeeId -> Map(projectName -> percent)
-  teamMembers.forEach((emp) => {
-    const weekMap = empWeekProjectAlloc.get(emp.id);
-    const projMap = weekMap?.get(selectedWeek) || new Map();
-    empProjectAlloc.set(emp.id, projMap);
-  });
-
-  // Collect active project columns across ALL weeks (so columns stay stable when navigating)
-  const projectTotals = new Map();
-  empWeekProjectAlloc.forEach((weekMap) => {
-    weekMap.forEach((projMap) => {
-      projMap.forEach((val, projName) => {
-        projectTotals.set(projName, (projectTotals.get(projName) || 0) + val);
-      });
-    });
-  });
-  const projectColumns = [...projectTotals.keys()]
-    .filter(n => normalizeClientNameKey(n) !== 'internal')
-    .sort((a, b) => {
-      const diff = (projectTotals.get(b) || 0) - (projectTotals.get(a) || 0);
-      return diff !== 0 ? diff : a.localeCompare(b);
-    });
-
-  // Build header — Name | Total | Free | ...projects...
-  matrixHead.innerHTML = `<tr>
-    <th></th>
-    <th class="col-total">Total</th>
-    <th class="col-free">Free</th>
-    ${projectColumns.map((p) => `<th>${escapeHtml(p)}</th>`).join('')}
-  </tr>`;
-
-  // Build employee metrics grouped by department
-  const byDept = new Map();
-  teamMembers.forEach((emp) => {
-    const team = normalizeTeamName(emp.department?.name, TEAM_AM);
-    if (!byDept.has(team)) byDept.set(team, []);
-
-    const projMap = empProjectAlloc.get(emp.id) || new Map();
-    const totalPercent = [...projMap.values()].reduce((s, v) => s + v, 0);
-    const capacity = Number(emp.capacity_percent) || 100;
-    const freePercent = capacity - totalPercent;
-
-    byDept.get(team).push({
-      employee: emp,
-      team,
-      projMap,
-      totalPercent,
-      capacity,
-      freePercent,
-      status: utilizationStatusMeta(totalPercent)
-    });
-  });
-
-  const orderedDepts = [...byDept.keys()].sort((a, b) => {
-    const aIsLeadership = a.toLowerCase() === 'leadership' ? 1 : 0;
-    const bIsLeadership = b.toLowerCase() === 'leadership' ? 1 : 0;
-    if (aIsLeadership !== bIsLeadership) return aIsLeadership - bIsLeadership;
-    return a.localeCompare(b);
-  });
-
-  // Sort within each dept: over-utilized first, then by free ascending
-  orderedDepts.forEach((dept) => {
-    byDept.get(dept).sort((a, b) => {
-      if (a.status.key === 'over' && b.status.key !== 'over') return -1;
-      if (a.status.key !== 'over' && b.status.key === 'over') return 1;
-      return a.freePercent - b.freePercent;
-    });
-  });
-
-  // Summary stats
-  const allMetrics = orderedDepts.flatMap((d) => byDept.get(d));
-  const totalPeople = allMetrics.length;
-  const totalAllocated = allMetrics.reduce((s, m) => s + m.totalPercent, 0) / 100;
-  const totalFree = allMetrics.reduce((s, m) => s + Math.max(0, m.freePercent), 0) / 100;
-  const countOver = allMetrics.filter((m) => m.status.key === 'over').length;
-  const countIdle = allMetrics.filter((m) => m.totalPercent === 0).length;
-
-  if (teamSummaryStrip) {
-    teamSummaryStrip.innerHTML = '';
-  }
-
-  // Render rows
-  matrixBody.innerHTML = '';
-  const colCount = projectColumns.length + 3;
-
-  orderedDepts.forEach((dept) => {
-    const deptRow = document.createElement('tr');
-    deptRow.className = 'matrix-dept-row';
-    deptRow.innerHTML = `<td>${escapeHtml(dept)}</td>${'<td></td>'.repeat(colCount - 1)}`;
-    matrixBody.appendChild(deptRow);
-
-    (byDept.get(dept) || []).forEach((metric) => {
-      const emp = metric.employee;
-      const empName = displayPersonName(emp.full_name, 'Employee');
-      const rowClass = metric.status.key === 'over' ? 'matrix-row-over' : metric.totalPercent === 0 ? 'matrix-row-idle' : '';
-
-      const projectCells = projectColumns.map((projName) => {
-        const rawPercent = Math.round(metric.projMap.get(projName) || 0);
-        if (rawPercent <= 0) {
-          return '<td class="matrix-cell-empty">\u2014</td>';
-        }
-        return `<td class="matrix-cell-val">${rawPercent}%</td>`;
-      });
-
-      const totalPercent = Math.round(metric.totalPercent);
-      const freePercent = Math.round(metric.freePercent);
-      const totalFraction = metric.totalPercent / 100;
-      const freeClass = freePercent < 0 ? 'free-over' : freePercent < 10 ? 'free-tight' : 'free-ok';
-
-      const overWidth = totalFraction > 1 ? totalFraction - 1 : 0;
-      const allocWidth = Math.min(totalFraction, 1);
-      const barHtml = `<div class="capacity-bar">
-        <div class="seg seg-alloc" style="width:${(allocWidth * 100).toFixed(0)}%"></div>
-        ${overWidth > 0 ? `<div class="seg seg-over" style="width:${(overWidth * 100).toFixed(0)}%"></div>` : ''}
-      </div>`;
-
-      const row = document.createElement('tr');
-      row.className = rowClass;
-      row.dataset.empId = emp.id;
-      row.dataset.empName = (emp.full_name || '').toLowerCase();
-      row.dataset.empDept = (dept || '').toLowerCase();
-      row.innerHTML = `
-        <td>
-          <span class="matrix-emp-name" data-emp-id="${emp.id}">
-            <span class="expand-icon">\u25B6</span>
-            ${escapeHtml(empName)}
-          </span>
-        </td>
-        <td class="matrix-cell-total">${totalPercent}%${barHtml}</td>
-        <td class="matrix-cell-free ${freeClass}">${freePercent}%</td>
-        ${projectCells.join('')}
-      `;
-      matrixBody.appendChild(row);
-    });
-  });
-
-  setTeamDashboardScopeNote('');
-
-  // Store data for drill-down and resize re-render
-  state._matrixWeekStarts = weekStarts;
-  state._matrixEmpWeekProjectAlloc = empWeekProjectAlloc;
-  state._matrixProjectColumns = projectColumns;
-  state._matrixTeamMembers = teamMembers;
-  state._matrixAllocationRows = allocationRows;
-}
-
-function renderResourceMatrixMobile(teamMembers, allocationRows, weekStarts, monthLabel) {
-  // Reuse data-building logic from renderResourceMatrix
+  // ── Build shared planner data ──
   const empWeekProjectAlloc = new Map();
   teamMembers.forEach((emp) => {
     empWeekProjectAlloc.set(emp.id, new Map());
@@ -6942,6 +8117,7 @@ function renderResourceMatrixMobile(teamMembers, allocationRows, weekStarts, mon
     }
   });
 
+  // Determine selected week
   const currentWeekIso = toISODateLocal(mondayWeekStartDate());
   if (state._matrixSelectedWeekIndex == null) {
     const currentIdx = weekStarts.indexOf(currentWeekIso);
@@ -6957,14 +8133,14 @@ function renderResourceMatrixMobile(teamMembers, allocationRows, weekStarts, mon
   if (weekPrevBtn) weekPrevBtn.disabled = selectedIdx <= 0;
   if (weekNextBtn) weekNextBtn.disabled = selectedIdx >= weekStarts.length - 1;
 
-  // Build per-employee allocations for selected week
+  // Per-employee allocations for selected week
   const empProjectAlloc = new Map();
   teamMembers.forEach((emp) => {
     const weekMap = empWeekProjectAlloc.get(emp.id);
     empProjectAlloc.set(emp.id, weekMap?.get(selectedWeek) || new Map());
   });
 
-  // Group by department
+  // Build employee metrics grouped by department
   const byDept = new Map();
   teamMembers.forEach((emp) => {
     const team = normalizeTeamName(emp.department?.name, TEAM_AM);
@@ -6989,71 +8165,175 @@ function renderResourceMatrixMobile(teamMembers, allocationRows, weekStarts, mon
     });
   });
 
-  // Hide table, render cards into wrap
-  matrixHead.innerHTML = '';
-  matrixBody.innerHTML = '';
-  const table = matrixBody.closest('table');
-  if (table) table.style.display = 'none';
+  // Store for re-render
+  state._matrixWeekStarts = weekStarts;
+  state._matrixEmpWeekProjectAlloc = empWeekProjectAlloc;
+  state._matrixTeamMembers = teamMembers;
+  state._matrixAllocationRows = allocationRows;
+  state._plannerByDept = byDept;
+  state._plannerOrderedDepts = orderedDepts;
+  state._plannerEmpProjectAlloc = empProjectAlloc;
 
-  let container = document.getElementById('matrixMobileCards');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'matrixMobileCards';
-    container.className = 'matrix-mobile-cards';
-    table.parentNode.appendChild(container);
+  setTeamDashboardScopeNote('');
+  renderActivePlannerView();
+}
+
+// ── Client color palette ──
+const PLANNER_CLIENT_COLORS = [
+  '#7c6f9c', '#5a8a7a', '#b8865e', '#6a8caf', '#a1716e',
+  '#8b9e6b', '#c2855c', '#6e7fa8', '#9b7b8e', '#7aaa8e',
+  '#b09060', '#5f8e9e', '#a8827a', '#88a070', '#c09070'
+];
+const _clientColorMap = new Map();
+function getClientColor(clientName) {
+  const key = normalizeClientNameKey(clientName);
+  if (key === 'internal') return 'rgba(var(--text-rgb), 0.12)';
+  if (!_clientColorMap.has(key)) {
+    _clientColorMap.set(key, PLANNER_CLIENT_COLORS[_clientColorMap.size % PLANNER_CLIENT_COLORS.length]);
   }
-  container.innerHTML = '';
+  return _clientColorMap.get(key);
+}
+if (typeof window !== 'undefined') window.getClientColor = getClientColor;
 
+function renderActivePlannerView() {
+  if (_plannerActiveView === 'clients') {
+    renderPlannerClientView();
+  } else {
+    renderPlannerPeopleView();
+  }
+  // Show/hide containers
+  if (plannerPeopleView) plannerPeopleView.style.display = _plannerActiveView === 'people' ? '' : 'none';
+  if (plannerClientView) plannerClientView.style.display = _plannerActiveView === 'clients' ? '' : 'none';
+}
+
+// ── People View: stacked bars per person ──
+function renderPlannerPeopleView() {
+  if (!plannerPeopleView || !state._plannerByDept) return;
+  const byDept = state._plannerByDept;
+  const orderedDepts = state._plannerOrderedDepts || [];
+
+  let html = '';
   orderedDepts.forEach((dept) => {
-    const deptLabel = document.createElement('div');
-    deptLabel.className = 'matrix-mobile-dept';
-    deptLabel.textContent = dept;
-    container.appendChild(deptLabel);
-
+    html += `<div class="rp-dept-header">${escapeHtml(dept)}</div><div class="rp-dept-grid">`;
     (byDept.get(dept) || []).forEach((metric) => {
       const emp = metric.employee;
       const empName = displayPersonName(emp.full_name, 'Employee');
-      const totalPercent = Math.round(metric.totalPercent);
-      const freePercent = Math.round(metric.freePercent);
-      const freeClass = freePercent < 0 ? 'free-over' : freePercent < 10 ? 'free-tight' : 'free-ok';
-      const allocWidth = Math.min(metric.totalPercent / 100, 1);
-      const overWidth = metric.totalPercent / 100 > 1 ? metric.totalPercent / 100 - 1 : 0;
+      const totalPct = Math.round(metric.totalPercent);
+      const freePct = Math.round(metric.freePercent);
+      const freeClass = freePct < 0 ? 'rp-free-over' : freePct < 10 ? 'rp-free-tight' : 'rp-free-ok';
+      const overClass = metric.status.key === 'over' ? ' rp-row-over' : metric.totalPercent === 0 ? ' rp-row-idle' : '';
 
+      // Build stacked bar segments
       const projects = [...metric.projMap.entries()]
         .filter(([n]) => normalizeClientNameKey(n) !== 'internal')
         .sort((a, b) => b[1] - a[1]);
+      const internalPct = Math.round(metric.projMap.get('Internal') || 0);
 
-      const projectsHtml = projects.length
-        ? projects.map(([name, pct]) => `<div class="matrix-mobile-proj"><span>${escapeHtml(name)}</span><span>${Math.round(pct)}%</span></div>`).join('')
-        : '<div class="matrix-mobile-proj"><span class="mini-meta">No allocations</span></div>';
-
-      const card = document.createElement('div');
-      card.className = `matrix-mobile-card ${metric.status.key === 'over' ? 'matrix-card-over' : metric.totalPercent === 0 ? 'matrix-card-idle' : ''}`;
-      card.dataset.empId = emp.id;
-      card.innerHTML = `
-        <div class="matrix-mobile-header">
-          <button class="matrix-mobile-name" data-emp-id="${emp.id}">${escapeHtml(empName)}</button>
-          <span class="matrix-mobile-pct">${totalPercent}%</span>
-        </div>
-        <div class="capacity-bar"><div class="seg seg-alloc" style="width:${(allocWidth * 100).toFixed(0)}%"></div>${overWidth > 0 ? `<div class="seg seg-over" style="width:${(overWidth * 100).toFixed(0)}%"></div>` : ''}</div>
-        <div class="matrix-mobile-free ${freeClass}">${freePercent}% free</div>
-        <div class="matrix-mobile-projects hidden">${projectsHtml}</div>
-      `;
-      card.querySelector('.matrix-mobile-header').addEventListener('click', () => {
-        card.querySelector('.matrix-mobile-projects').classList.toggle('hidden');
+      let barSegments = '';
+      projects.forEach(([name, pct]) => {
+        const w = Math.round(pct);
+        if (w <= 0) return;
+        barSegments += `<div class="rp-bar-seg" style="width:${w}%;background:${getClientColor(name)}" title="${escapeHtml(name)} ${w}%"></div>`;
       });
-      container.appendChild(card);
+      if (internalPct > 0) {
+        barSegments += `<div class="rp-bar-seg" style="width:${internalPct}%;background:rgba(var(--text-rgb),0.12)" title="Internal ${internalPct}%"></div>`;
+      }
+
+      // Client labels below bar
+      const labels = projects.map(([name, pct]) =>
+        `<span class="rp-client-label"><span class="rp-client-dot" style="background:${getClientColor(name)}"></span>${escapeHtml(name)} ${Math.round(pct)}%</span>`
+      ).join('');
+      const internalLabel = internalPct > 0 ? `<span class="rp-client-label"><span class="rp-client-dot" style="background:rgba(var(--text-rgb),0.12)"></span>Internal ${internalPct}%</span>` : '';
+
+      html += `
+        <div class="rp-person${overClass}" data-emp-name="${(emp.full_name || '').toLowerCase()}" data-emp-dept="${(dept || '').toLowerCase()}">
+          <div class="rp-person-head">
+            <span class="rp-person-name" data-emp-id="${emp.id}">${escapeHtml(empName)}</span>
+            <span class="rp-person-pct">${totalPct}% used</span>
+            <span class="rp-person-free ${freeClass}">${freePct}% free</span>
+          </div>
+          <div class="rp-bar">${barSegments}</div>
+          <div class="rp-client-labels">${labels}${internalLabel}</div>
+        </div>`;
+    });
+    html += `</div>`;
+  });
+
+  plannerPeopleView.innerHTML = html || '<p class="mini-meta" style="padding:var(--space-3)">No allocation data.</p>';
+}
+
+// ── Client View: cards per client ──
+function renderPlannerClientView() {
+  if (!plannerClientView || !state._plannerByDept) return;
+  const byDept = state._plannerByDept;
+  const orderedDepts = state._plannerOrderedDepts || [];
+
+  // Aggregate: client → [{empName, dept, pct}]
+  const clientMap = new Map(); // clientName → { people: [], totalPct: 0 }
+  orderedDepts.forEach((dept) => {
+    (byDept.get(dept) || []).forEach((metric) => {
+      const empName = displayPersonName(metric.employee.full_name, 'Employee');
+      metric.projMap.forEach((pct, projName) => {
+        if (normalizeClientNameKey(projName) === 'internal') return;
+        if (pct <= 0) return;
+        if (!clientMap.has(projName)) clientMap.set(projName, { people: [], totalPct: 0 });
+        const entry = clientMap.get(projName);
+        entry.people.push({ name: empName, dept, pct: Math.round(pct) });
+        entry.totalPct += pct;
+      });
     });
   });
 
-  setTeamDashboardScopeNote('');
-  state._matrixWeekStarts = weekStarts;
-  state._matrixEmpWeekProjectAlloc = empWeekProjectAlloc;
-  state._matrixProjectColumns = [...new Set(
-    [...empWeekProjectAlloc.values()].flatMap(wm => [...wm.values()].flatMap(pm => [...pm.keys()]))
-  )].filter(n => normalizeClientNameKey(n) !== 'internal');
-  state._matrixTeamMembers = teamMembers;
-  state._matrixAllocationRows = allocationRows;
+  // Sort by total allocation descending
+  const sortedClients = [...clientMap.entries()]
+    .map(([name, data]) => ({ name, ...data, totalPct: Math.round(data.totalPct) }))
+    .sort((a, b) => b.totalPct - a.totalPct);
+
+  // Find unallocated people
+  const allMetrics = orderedDepts.flatMap((d) => byDept.get(d) || []);
+  const idlePeople = allMetrics
+    .filter(m => m.totalPercent === 0)
+    .map(m => ({ name: displayPersonName(m.employee.full_name, 'Employee'), dept: m.team }));
+
+  let html = '';
+  if (!sortedClients.length) {
+    html = '<p class="mini-meta" style="padding:var(--space-3)">No client allocations this week.</p>';
+  } else {
+    html += '<div class="rp-client-grid">';
+    sortedClients.forEach((client) => {
+      const color = getClientColor(client.name);
+      const totalHrs = Math.round(client.totalPct * 0.4 * 10) / 10; // 40hr week
+      const peopleHtml = client.people
+        .sort((a, b) => b.pct - a.pct)
+        .map(p => {
+          const pHrs = Math.round(p.pct * 0.4 * 10) / 10;
+          return `<div class="rp-cv-person"><span>${escapeHtml(p.name)}</span><span class="rp-cv-dept">${escapeHtml(p.dept)}</span><span class="rp-cv-pct">${p.pct}%</span><span class="rp-cv-hrs">${pHrs}h</span></div>`;
+        })
+        .join('');
+
+      html += `
+        <div class="rp-client-card" data-client-name="${(client.name || '').toLowerCase()}">
+          <div class="rp-cc-head">
+            <span class="rp-cc-color" style="background:${color}"></span>
+            <span class="rp-cc-name">${escapeHtml(client.name)}</span>
+          </div>
+          <div class="rp-cc-people">
+            ${peopleHtml}
+            <div class="rp-cv-total"><span>Total</span><span class="rp-cv-pct">${client.totalPct}%</span><span class="rp-cv-hrs">${totalHrs}h</span></div>
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  if (idlePeople.length) {
+    html += `<div class="rp-dept-header" style="margin-top:var(--space-3)">Unallocated</div>`;
+    idlePeople.forEach(p => {
+      html += `<div class="rp-idle-person"><span>${escapeHtml(p.name)}</span><span class="rp-cv-dept">${escapeHtml(p.dept)}</span><span class="rp-cv-pct">0%</span></div>`;
+    });
+  }
+
+  plannerClientView.innerHTML = html;
 }
 
 async function loadTeamDashboardFromSupabase() {
@@ -7069,10 +8349,12 @@ async function loadTeamDashboardFromSupabase() {
     return;
   }
 
-  const TEAM_DASHBOARD_EXCLUDE = ['finance@youragency.com'];
   const managerEmail = normalizeEmail(state.employeeProfile?.email || state.session?.user?.email || '');
-  const teamMembers = reporteeEmployeesForManager(managerEmail)
-    .filter(e => !TEAM_DASHBOARD_EXCLUDE.includes(normalizeEmail(e.email)));
+  const teamMembers = (isLeadershipRole()
+    ? state.employeeDirectory.slice().sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
+    : reporteeEmployeesForManager(managerEmail))
+    .filter(e => !getHiddenEmployeeEmails().includes(normalizeEmail(e.email)))
+    .filter(e => e.is_active !== false);
   const monthWindow = plannerMonthWindow();
   const weekStarts = plannerWeekStartsForMonth(monthWindow);
 
@@ -7095,7 +8377,7 @@ async function loadTeamDashboardFromSupabase() {
     `)
     .eq('period_type', 'week')
     .in('employee_id', teamEmployeeIds)
-    .gte('period_start', monthWindow.monthStartIso)
+    .gte('period_start', toISODateLocal(mondayWeekStartDate(monthWindow.monthStartDate)))
     .lte('period_start', monthWindow.monthEndIso)
     .order('period_start', { ascending: true })
     .order('updated_at', { ascending: true });
@@ -7124,16 +8406,18 @@ function normalizeClientNameKey(value) {
 }
 
 function currentClientOwnerFullName() {
-  const ownDirectoryRow = state.employeeDirectory.find((row) => row.id === state.currentEmployeeId);
+  const ownDirectoryRow = lookupActiveEmployee(state.currentEmployeeId);
   const fallbackFromSession = displayNameFromEmail(state.session?.user?.email || '');
   return String(ownDirectoryRow?.full_name || state.employeeProfile?.full_name || fallbackFromSession || '').trim();
 }
 
 function resolveClientOwnerRow(owner) {
   const ownerDisplay = displayPersonName(owner, '');
+  // Display-context match: try exact, then prettified comparison; fall back to current user.
+  const all = _allEmployees();
   return (
-    state.employeeDirectory.find((row) => row.full_name === owner || displayPersonName(row.full_name, '') === ownerDisplay) ||
-    state.employeeDirectory.find((row) => row.id === state.currentEmployeeId) ||
+    all.find((row) => row.full_name === owner || displayPersonName(row.full_name, '') === ownerDisplay) ||
+    lookupActiveEmployee(state.currentEmployeeId) ||
     null
   );
 }
@@ -7253,32 +8537,6 @@ function addPortfolioRow({ client, type, owner, status = 'Active' }) {
   renderClientRegistryTable();
 }
 
-function canAddClients() {
-  if (isSuperadminUser()) return true;
-  if (isLeadershipRole()) return true;
-  return currentUserDepartmentName() === TEAM_AM;
-}
-
-function canEditClients() {
-  if (isSuperadminUser()) return true;
-  return isLeadershipRole();
-}
-
-function canDeleteClients() {
-  return isSuperadminUser();
-}
-
-function canArchiveClients() {
-  if (isSuperadminUser()) return true;
-  return isLeadershipRole();
-}
-
-function canArchiveClient(clientEntry) {
-  if (canArchiveClients()) return true;
-  // Client owner (AM) can archive/unarchive their own clients
-  return clientEntry?.owner_employee_id && clientEntry.owner_employee_id === state.currentEmployeeId;
-}
-
 let clientSortColumn = 'name';
 let clientSortAsc = true;
 
@@ -7351,12 +8609,16 @@ async function renderClientRegistryTable() {
     const eid = escapeHtml(entry.id);
     const canArchiveThis = canArchiveClient(entry);
     const hasAnalytics = clientsWithAnalytics.has(entry.id);
-    let actions = hasAnalytics ? `<button class="ghost small" type="button" data-client-action="analytics" data-client-id="${eid}" title="Analytics">📊</button>` : '';
+    let nameIcons = '';
+    if (canEditScopeCoverage()) nameIcons += `<button class="ghost small client-name-icon" type="button" data-client-action="scope-coverage" data-client-id="${eid}" title="Scope & Coverage">⚙️</button>`;
+    let actions = hasAnalytics
+      ? `<button class="ghost small" type="button" data-client-action="analytics" data-client-id="${eid}" title="Analytics">📊</button>`
+      : `<button class="ghost small" type="button" data-client-action="analytics" data-client-id="${eid}" title="Upload analytics" style="opacity:0.35">📊</button>`;
     if (showEdit) actions += `<button class="ghost small" type="button" data-client-action="edit" data-client-id="${eid}">Edit</button>`;
     if (canArchiveThis) actions += `<button class="ghost small" type="button" data-client-action="archive" data-client-id="${eid}">Archive</button>`;
     if (showDelete) actions += `<button class="ghost small danger" type="button" data-client-action="delete" data-client-id="${eid}">Delete</button>`;
     row.innerHTML = `
-      <td data-label="Client"><a href="#" class="client-name-link" data-client-id="${eid}">${escapeHtml(entry.name)}</a></td>
+      <td data-label="Client">${nameIcons}<a href="#" class="client-name-link" data-client-id="${eid}">${escapeHtml(entry.name)}</a></td>
       <td data-label="Type"><span class="chip ${chipClass}">${normalizedType}</span></td>
       <td data-label="Status">${escapeHtml(entry.status || 'Active')}</td>
       <td data-label="Owner">${escapeHtml(entry.owner || '-')}</td>
@@ -7673,11 +8935,61 @@ function updateLocalClientById({ clientId, client, type, owner }) {
   });
 }
 
+async function fetchClientDependencySummary(clientId, clientName) {
+  if (!state.supabase || !state.isAuthenticated || String(clientId).startsWith('local-')) {
+    return { lines: [], total: 0 };
+  }
+  const weekStartIso = getCurrentWeekStartIso();
+  const tasks = [
+    state.supabase.from('client_scope_items').select('id', { count: 'exact', head: true }).eq('client_id', clientId).eq('is_active', true),
+    state.supabase.from('client_standing_allocations').select('id', { count: 'exact', head: true }).eq('client_id', clientId),
+    // Active allocations only — this week, joined via project (allocations has no
+    // client_id, so the old .eq('client_id') silently errored and always returned 0).
+    state.supabase.from('allocations').select('id, projects!inner(client_id)', { count: 'exact', head: true }).eq('projects.client_id', clientId).eq('period_type', 'week').eq('period_start', weekStartIso),
+    // Active engagement only: contracted + still running. Completed / terminated /
+    // lost deals are history and shouldn't make a wrapped-up client look in-use.
+    state.supabase.from('deals').select('id', { count: 'exact', head: true }).eq('client_id', clientId).eq('stage', 'contracted').eq('termination_type', 'Active'),
+  ];
+  const [scopeRes, standingRes, weeklyRes, dealsRes] = await Promise.all(tasks);
+  // Tasks table uses `notes` for client name
+  let tasksCount = 0;
+  if (clientName) {
+    // Only LIVE tasks count as "currently linked". Archived/done tasks are
+    // historical and show in no active view — counting them made dormant
+    // clients with only archived/done work look busy at archive time.
+    const tasksRes = await state.supabase.from('daily_tasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('notes', clientName)
+      .neq('status', 'archived')
+      .neq('status', 'done');
+    if (!tasksRes.error) tasksCount = tasksRes.count || 0;
+  }
+  const rows = [
+    ['Active scope items', scopeRes.count || 0],
+    ['Standing allocations', standingRes.count || 0],
+    ['Active allocations this week', weeklyRes.count || 0],
+    ['Active deals', dealsRes.count || 0],
+    ['Active daily tasks tagged to this client', tasksCount],
+  ];
+  const lines = rows.filter(([, n]) => n > 0).map(([label, n]) => `• ${label}: ${n}`);
+  const total = rows.reduce((s, [, n]) => s + n, 0);
+  return { lines, total };
+}
+
 async function deleteClientById(clientId) {
   if (!clientId) return;
   const target = state.clients.find((row) => String(row.id) === String(clientId));
   const targetName = target?.name || 'this client';
-  const confirmed = window.confirm(`Delete ${targetName}? This removes the client and linked projects/allocations.`);
+  let summaryText = '';
+  try {
+    const { lines, total } = await fetchClientDependencySummary(clientId, targetName);
+    summaryText = total
+      ? `\n\nThis will cascade-delete the following linked data:\n${lines.join('\n')}`
+      : '\n\nNo linked data found.';
+  } catch (err) {
+    console.warn('Dependency summary failed:', err);
+  }
+  const confirmed = await colonyConfirm(`Delete ${targetName}?${summaryText}\n\nThis cannot be undone.`, { title: 'Delete client', confirmLabel: 'Delete', danger: true });
   if (!confirmed) return;
 
   if (state.supabase && state.isAuthenticated && !String(clientId).startsWith('local-')) {
@@ -7700,12 +9012,64 @@ async function archiveClientById(clientId) {
   if (!clientId) return;
   const target = state.clients.find((row) => String(row.id) === String(clientId));
   const targetName = target?.name || 'this client';
-  const confirmed = window.confirm(`Archive ${targetName}? The client will be hidden but data is preserved.`);
-  if (!confirmed) return;
+  let summaryText = '';
+  try {
+    const { lines, total } = await fetchClientDependencySummary(clientId, targetName);
+    summaryText = total
+      ? `\n\nCurrently linked (data will be preserved):\n${lines.join('\n')}`
+      : '';
+  } catch (err) {
+    console.warn('Dependency summary failed:', err);
+  }
+  // If the client has a live engagement (active contracted deal), let the user
+  // close it out here — so we never leave an "Active" deal on an archived client.
+  let activeDeals = [];
+  if (state.supabase && state.isAuthenticated && !String(clientId).startsWith('local-')) {
+    const dr = await state.supabase.from('deals').select('id, deal_name')
+      .eq('client_id', clientId).eq('stage', 'contracted').eq('termination_type', 'Active');
+    if (!dr.error) activeDeals = dr.data || [];
+  }
 
+  let termination = null; // 'Good Termination' | 'Bad Termination' | null (leave the deal alone)
+  if (activeDeals.length) {
+    const dealLabel = activeDeals.map(d => d.deal_name).join(', ');
+    const choice = await colonyChoice(
+      `Archive ${targetName}? The client will be hidden but all data is preserved.${summaryText}\n\n${targetName} has a live engagement (${dealLabel}). How did it end?`,
+      {
+        title: 'Archive client',
+        choices: [
+          { label: 'Completed — good', value: 'Good Termination', variant: 'primary' },
+          { label: 'Completed — ended badly', value: 'Bad Termination' },
+          { label: 'Leave the deal as-is', value: 'leave' }
+        ]
+      }
+    );
+    if (!choice) return; // cancelled
+    if (choice !== 'leave') termination = choice;
+  } else {
+    const confirmed = await colonyConfirm(`Archive ${targetName}? The client will be hidden but all data is preserved.${summaryText}`);
+    if (!confirmed) return;
+  }
+
+  let dealNote = '';
   if (state.supabase && state.isAuthenticated && !String(clientId).startsWith('local-')) {
     const archiveResult = await state.supabase.from('clients').update({ is_active: false }).eq('id', clientId);
     if (archiveResult.error) throw archiveResult.error;
+
+    // Close out the engagement deal(s) per the user's choice.
+    if (termination && activeDeals.length) {
+      const dealIds = activeDeals.map(d => d.id);
+      const dealRes = await state.supabase.from('deals')
+        .update({ termination_type: termination, updated_at: new Date().toISOString() })
+        .in('id', dealIds)
+        .select('id');
+      if (dealRes.error) dealNote = ` (couldn't update the deal: ${dealRes.error.message})`;
+      else if ((dealRes.data?.length || 0) < dealIds.length) dealNote = ' (deal not updated — you may not have deal-edit access)';
+      else dealNote = ` Engagement marked ${termination}.`;
+      if (state.deals?.length) await loadDealsFromSupabase().catch(() => {});
+    }
+
+    notifyClientStatusChange('client_archived', { clientId });
     await loadClientsFromSupabase();
   } else {
     state.clients = state.clients.map((row) =>
@@ -7717,7 +9081,7 @@ async function archiveClientById(clientId) {
   if (String(editingClientId) === String(clientId)) {
     resetClientEditor();
   }
-  setClientFormNotice(`Archived ${targetName}.`);
+  setClientFormNotice(`Archived ${targetName}.${dealNote}`);
 }
 
 function renderArchivedClientsTable() {
@@ -7784,7 +9148,65 @@ const clientDetailName = document.getElementById('clientDetailName');
 const clientDetailMeta = document.getElementById('clientDetailMeta');
 const clientDetailAllocBody = document.getElementById('clientDetailAllocBody');
 const clientDetailTaskBody = document.getElementById('clientDetailTaskBody');
+const clientDetailEngagement = document.getElementById('clientDetailEngagement');
 const clientListPanels = document.querySelectorAll('#client-projects > .panel, #client-projects > .screen-head');
+
+if (clientDetailEngagement) {
+  clientDetailEngagement.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-client-action="scope-coverage"]');
+    if (!btn || !canEditScopeCoverage()) return;
+    scopeCoverageCurrentClientId = btn.dataset.clientId || '';
+    navigateToScreen('client-scope-coverage');
+  });
+}
+
+// Engagement & Scope summary on the client page: the live contract (from deals)
+// + active scope items. The client page otherwise shows only this-week work
+// (allocations + tasks), so a contracted-but-idle client looked empty.
+async function renderClientEngagement(clientId) {
+  if (!clientDetailEngagement) return;
+  if (!state.supabase || !state.isAuthenticated) { clientDetailEngagement.innerHTML = ''; return; }
+  clientDetailEngagement.innerHTML = '<h3>Engagement &amp; Scope</h3><p class="mini-meta">Loading…</p>';
+
+  const [dealsRes, scopeRes] = await Promise.all([
+    state.supabase.from('deals').select('deal_name, stage, termination_type').eq('client_id', clientId),
+    state.supabase.from('client_scope_items').select('title, scope_type, end_month').eq('client_id', clientId).eq('is_active', true).order('sort_order', { ascending: true })
+  ]);
+  if (String(state.selectedClientId) !== String(clientId)) return; // user navigated away mid-fetch
+  const deals = dealsRes.error ? [] : (dealsRes.data || []);
+  const scope = scopeRes.error ? [] : (scopeRes.data || []);
+
+  const active = deals.find(d => d.stage === 'contracted' && d.termination_type === 'Active');
+  const completed = deals.find(d => d.stage === 'contracted' && d.termination_type && d.termination_type !== 'Active');
+  const open = deals.find(d => ['qualified', 'discovery', 'proposal', 'negotiated'].includes(d.stage));
+  let chip = 'pending', label = 'No active contract', dealName = '';
+  if (active) { chip = 'approved'; label = 'Active'; dealName = active.deal_name; }
+  else if (completed) { chip = 'pending'; label = 'Completed'; dealName = completed.deal_name; }
+  else if (open) { chip = 'info'; label = 'In pipeline'; dealName = open.deal_name; }
+
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const fmtMonth = (iso) => { const d = new Date(String(iso).slice(0, 10) + 'T00:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }); };
+  const scopeHtml = scope.length
+    ? scope.map(s => {
+        const stale = s.end_month && new Date(String(s.end_month).slice(0, 10) + 'T00:00:00') < monthStart;
+        return `<div class="eng-scope-item"><span>${escapeHtml(s.title || 'Untitled')}</span><span class="chip">${escapeHtml(s.scope_type || 'scope')}</span>${stale ? `<span class="eng-stale">⚠ ended ${fmtMonth(s.end_month)} · still active</span>` : ''}</div>`;
+      }).join('')
+    : '<span class="mini-meta">No active scope defined.</span>';
+
+  clientDetailEngagement.innerHTML = `
+    <h3>Engagement &amp; Scope</h3>
+    <div class="eng-row">
+      <span class="eng-label">Contract</span>
+      <span class="chip ${chip}">${label}</span>
+      ${dealName ? `<span class="eng-deal-name">${escapeHtml(dealName)}</span>` : ''}
+    </div>
+    <div class="eng-row eng-row-scope">
+      <span class="eng-label">Scope</span>
+      <div class="eng-scope-list">${scopeHtml}</div>
+      ${canEditScopeCoverage() ? `<button class="ghost small" type="button" data-client-action="scope-coverage" data-client-id="${escapeHtml(clientId)}">Scope &amp; Coverage →</button>` : ''}
+    </div>
+  `;
+}
 
 async function showClientDetail(clientId) {
   const client = state.clients.find(c => String(c.id) === String(clientId));
@@ -7795,21 +9217,27 @@ async function showClientDetail(clientId) {
     await loadHomeStatsFromSupabase();
   }
 
-  // Hide list panels, show detail view
-  clientListPanels.forEach(el => el.classList.add('hidden'));
+  // Hide list panels, show detail view. Uses a dedicated class (not `hidden`)
+  // because applyRoleAccess() toggles `hidden` on .leadership-only nodes — for a
+  // leadership user an auth refresh would strip `hidden` off the Archived Clients
+  // panel and make it reappear above the open detail view.
+  clientListPanels.forEach(el => el.classList.add('detail-hidden'));
   clientDetailView.classList.remove('hidden');
   state.selectedClientId = clientId;
+  renderClientEngagement(clientId).catch(console.error);
 
   // Push history state so browser back returns to client list
   const url = new URL(window.location.href);
   url.hash = 'client-projects';
   window.history.pushState({ screenId: 'client-projects', clientDetailId: clientId }, '', url.toString());
 
-  // Allocations — find from homeAllocations where project's client matches
+  // Allocations — find from homeAllocations where project's client matches.
+  // Build maps from BOTH active and offboarded employees so historical names always resolve.
   const empNameMap = new Map();
   const empCapMap = new Map();
-  (state.employeeDirectory || []).forEach(e => {
-    empNameMap.set(e.id, e.full_name || e.email);
+  _allEmployees().forEach(e => {
+    const display = displayPersonName(e.full_name, e.email);
+    empNameMap.set(e.id, e.is_active === false ? `${display} (offboarded)` : display);
     empCapMap.set(e.id, (e.capacity_percent || 100) / 100);
   });
 
@@ -7830,7 +9258,7 @@ async function showClientDetail(clientId) {
     });
     let allocHtml = '';
     [...empAllocMap.entries()].sort((a, b) => b[1] - a[1]).forEach(([empId, pct]) => {
-      const name = empNameMap.get(empId) || 'Unknown';
+      const name = empNameMap.get(empId) || lookupEmployeeName(empId);
       const cap = empCapMap.get(empId) || 1;
       const hrs = (pct / 100) * cap * WORK_HOURS_PER_WEEK;
       totalClientHours += hrs;
@@ -7853,19 +9281,24 @@ async function showClientDetail(clientId) {
     <div class="util-box"><div class="util-label">Hrs/Week</div><div class="util-value">${totalClientHours > 0 ? Math.round(totalClientHours) + 'h' : '-'}</div></div>
   `;
 
-  // Tasks — find today's tasks where notes (client) matches this client
-  const todayIso = toISODateLocal();
+  // Tasks — find today's tasks where notes (client) matches this client.
+  // Names are resolved via the central helper, so offboarded folks appear
+  // with an "(offboarded)" suffix instead of as "Unknown".
+  // All ACTIVE tasks for this client, across the whole team. RLS allows reading
+  // everyone's tasks and state.dailyTasks is company-wide, so this surfaces what
+  // each person is working on for the client. (Was filtered to today's dated
+  // tasks only, which hid weekly/undated tasks and made the panel look empty.)
   const clientTasks = (state.dailyTasks || []).filter(t => {
     const taskClient = (t.notes || '').toLowerCase().trim();
-    return taskClient === clientName && t.task_date === todayIso && t.status !== 'archived';
+    return taskClient === clientName && t.status !== 'archived' && t.status !== 'done';
   });
 
   if (!clientTasks.length) {
-    clientDetailTaskBody.innerHTML = '<tr><td colspan="4">No tasks for today.</td></tr>';
+    clientDetailTaskBody.innerHTML = '<tr><td colspan="4">No active tasks for this client.</td></tr>';
   } else {
     let taskHtml = '';
     clientTasks.forEach(t => {
-      const name = empNameMap.get(t.employee_id) || 'Unknown';
+      const name = empNameMap.get(t.employee_id) || lookupEmployeeName(t.employee_id);
       const statusChip = t.status === 'done' ? 'approved' : 'pending';
       const statusLabel = t.status === 'done' ? 'Done' : t.status === 'in_progress' ? 'In Progress' : t.status;
       taskHtml += `<tr${t.status === 'done' ? ' class="task-done"' : ''}>
@@ -7881,7 +9314,10 @@ async function showClientDetail(clientId) {
 
 function hideClientDetail() {
   if (clientDetailView) clientDetailView.classList.add('hidden');
-  clientListPanels.forEach(el => el.classList.remove('hidden'));
+  // Remove only the navigation class — role visibility (`hidden` via
+  // applyRoleAccess) must survive going back, or non-leadership users would
+  // see leadership-only panels after visiting a client detail.
+  clientListPanels.forEach(el => el.classList.remove('detail-hidden'));
   state.selectedClientId = null;
 }
 
@@ -7912,509 +9348,21 @@ const analyticsUploadInline = document.getElementById('analyticsUploadInline');
 const analyticsFileInput = document.getElementById('analyticsFileInput');
 
 let analyticsCurrentClientId = null;
+let scopeCoverageCurrentClientId = null;
 
-
-// Format large numbers
-function fmtAnalytics(n) {
-  if (n == null || isNaN(n)) return '0';
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-  return Number(n).toLocaleString();
+// Display labels: existing department names → friendlier labels for the Scope & Coverage screen
+const SCOPE_DEPT_LABELS = {
+  'AM': 'Account Mgmt',
+  'Acc Management': 'Account Mgmt',
+  'Art': 'Design'
+};
+function scopeDeptLabel(name) {
+  return SCOPE_DEPT_LABELS[name] || name || '—';
 }
 
-function pctAnalytics(n) {
-  if (n == null || isNaN(n)) return '0%';
-  return (n * 100).toFixed(1) + '%';
-}
 
-function trendArrow(current, previous) {
-  const cur = Number(current) || 0;
-  const prev = Number(previous) || 0;
-  if (prev === 0 && cur === 0) return '';
-  if (cur > prev) return ' <span class="trend-up">↑</span>';
-  if (cur < prev) return ' <span class="trend-down">↓</span>';
-  return '';
-}
-
-function weekLabelAnalytics(w) {
-  let ds = String(w || '').trim();
-  // Normalize MM/DD/YYYY → YYYY-MM-DD
-  const m = ds.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) ds = m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
-  const d = new Date(ds + 'T00:00:00');
-  if (isNaN(d.getTime())) return ds;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-}
-
-function monthLabelAnalytics(key) {
-  const [y, m] = key.split('-');
-  const d = new Date(Number(y), Number(m) - 1, 1);
-  return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
-}
-
-function normalizeDateStr(ds) {
-  ds = String(ds || '').trim();
-  const m = ds.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) return m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
-  return ds;
-}
-
-function getReportCompareLabel(report) {
-  const weekly = report.metrics_data || [];
-  if (weekly.length < 1) return report.report_label || 'No data';
-  if (weekly.length < 2) return `Week of ${weekLabelAnalytics(weekly[0].week)}`;
-  const latest = weekly[weekly.length - 1];
-  const prev = weekly[weekly.length - 2];
-  const now = new Date();
-  const latestDate = new Date(normalizeDateStr(latest.week) + 'T00:00:00');
-  const diffDays = Math.floor((now - latestDate) / (1000 * 60 * 60 * 24));
-  if (diffDays >= 0 && diffDays < 7) return 'This week vs last week';
-  return `Week of ${weekLabelAnalytics(latest.week)} vs ${weekLabelAnalytics(prev.week)}`;
-}
-
-function aggregateWeeklyToMonthly(weekly) {
-  const map = new Map();
-  weekly.forEach(w => {
-    const monthKey = w.week.substring(0, 7);
-    if (!map.has(monthKey)) {
-      map.set(monthKey, {
-        month: monthKey,
-        'Impressions (organic)': 0, 'Impressions (sponsored)': 0, 'Impressions (total)': 0,
-        'Clicks (total)': 0, 'Reactions (total)': 0, 'Comments (total)': 0, 'Reposts (total)': 0,
-        'New followers (organic)': 0, 'New followers (sponsored)': 0, 'New followers (total)': 0,
-        'Engagement rate (total)': 0, _engCount: 0, 'Posts': 0
-      });
-    }
-    const m = map.get(monthKey);
-    m['Posts'] += w['Posts'] || 0;
-    m['Impressions (organic)'] += w['Impressions (organic)'] || 0;
-    m['Impressions (sponsored)'] += w['Impressions (sponsored)'] || 0;
-    m['Impressions (total)'] += w['Impressions (total)'] || 0;
-    m['Clicks (total)'] += w['Clicks (total)'] || 0;
-    m['Reactions (total)'] += w['Reactions (total)'] || 0;
-    m['Comments (total)'] += w['Comments (total)'] || 0;
-    m['Reposts (total)'] += w['Reposts (total)'] || 0;
-    m['New followers (organic)'] += w['New followers (organic)'] || 0;
-    m['New followers (sponsored)'] += w['New followers (sponsored)'] || 0;
-    m['New followers (total)'] += w['New followers (total)'] || 0;
-    const eng = w['Engagement rate (total)'] || 0;
-    if (eng > 0) { m['Engagement rate (total)'] += eng; m._engCount++; }
-  });
-  const months = [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
-  months.forEach(m => {
-    if (m._engCount > 0) m['Engagement rate (total)'] /= m._engCount;
-    delete m._engCount;
-  });
-  return months;
-}
-
-// --- XLS/CSV Parsing ---
-function parseLinkedInAnalytics(file, existingWb) {
-  return new Promise((resolve, reject) => {
-    function doParse(wb) {
-      try {
-        // Find sheets — LinkedIn exports have "Metrics" and "All posts" (or similar names)
-        const metricsSheetName = wb.SheetNames.find(s => /metric/i.test(s)) || wb.SheetNames[0];
-        const postsSheetName = wb.SheetNames.find(s => /post/i.test(s)) || wb.SheetNames[1];
-
-        // LinkedIn XLS has a description row 0, actual headers in row 1, data from row 2
-        // Use header:1 to get raw arrays, then manually map using row 1 as keys
-        function parseLinkedInSheet(ws) {
-          if (!ws) return [];
-          const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-          if (raw.length < 3) return [];
-          // Row 0 = description, Row 1 = column headers, Row 2+ = data
-          // But if row 0 looks like a short header (not a description), use it directly
-          let headerIdx = 1;
-          const r0First = String(raw[0][0] || '').trim();
-          // If row 0 first cell is short (< 50 chars) and looks like a column name, use it as header
-          if (r0First.length < 50 && (r0First === 'Date' || r0First === 'Post title')) {
-            headerIdx = 0;
-          }
-          const headers = raw[headerIdx];
-          const rows = [];
-          for (let i = headerIdx + 1; i < raw.length; i++) {
-            const obj = {};
-            headers.forEach((h, idx) => { obj[String(h).trim()] = raw[i][idx] !== undefined ? raw[i][idx] : ''; });
-            rows.push(obj);
-          }
-          return rows;
-        }
-        const metricsRaw = metricsSheetName ? parseLinkedInSheet(wb.Sheets[metricsSheetName]) : [];
-        const postsRaw = postsSheetName ? parseLinkedInSheet(wb.Sheets[postsSheetName]) : [];
-
-        // Aggregate metrics into weekly rollups
-        const weeklyMap = new Map();
-        metricsRaw.forEach(row => {
-          // LinkedIn date column is usually "Date"
-          let dateVal = row['Date'] || row['date'] || '';
-          if (typeof dateVal === 'number') {
-            // Excel serial date
-            const d = new Date((dateVal - 25569) * 86400 * 1000);
-            dateVal = d.toISOString().split('T')[0];
-          } else if (dateVal instanceof Date) {
-            dateVal = dateVal.toISOString().split('T')[0];
-          } else {
-            dateVal = String(dateVal).trim();
-            // Convert MM/DD/YYYY to YYYY-MM-DD
-            const slashParts = dateVal.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-            if (slashParts) dateVal = slashParts[3] + '-' + slashParts[1].padStart(2, '0') + '-' + slashParts[2].padStart(2, '0');
-          }
-          if (!dateVal || dateVal.length < 8) return;
-
-          // Compute week start (Monday)
-          const dt = new Date(dateVal + 'T00:00:00');
-          if (isNaN(dt.getTime())) return;
-          const day = dt.getDay();
-          const diff = day === 0 ? 6 : day - 1;
-          const weekStart = new Date(dt);
-          weekStart.setDate(dt.getDate() - diff);
-          const weekKey = weekStart.toISOString().split('T')[0];
-
-          if (!weeklyMap.has(weekKey)) {
-            weeklyMap.set(weekKey, {
-              week: weekKey,
-              'Impressions (organic)': 0, 'Impressions (sponsored)': 0, 'Impressions (total)': 0,
-              'Clicks (total)': 0, 'Reactions (total)': 0, 'Comments (total)': 0, 'Reposts (total)': 0,
-              'New followers (organic)': 0, 'New followers (sponsored)': 0, 'New followers (total)': 0,
-              'Engagement rate (total)': 0, _engCount: 0, 'Posts': 0
-            });
-          }
-          const w = weeklyMap.get(weekKey);
-          w['Impressions (organic)'] += Number(row['Impressions (organic)']) || 0;
-          w['Impressions (sponsored)'] += Number(row['Impressions (sponsored)']) || 0;
-          w['Impressions (total)'] += Number(row['Impressions (total)']) || Number(row['Impressions (organic)']) || 0;
-          w['Clicks (total)'] += Number(row['Clicks (total)']) || 0;
-          w['Reactions (total)'] += Number(row['Reactions (total)']) || 0;
-          w['Comments (total)'] += Number(row['Comments (total)']) || 0;
-          w['Reposts (total)'] += Number(row['Reposts (total)']) || 0;
-          w['New followers (organic)'] += Number(row['New followers (organic)']) || 0;
-          w['New followers (sponsored)'] += Number(row['New followers (sponsored)']) || 0;
-          w['New followers (total)'] += Number(row['New followers (total)']) || Number(row['New followers (organic)']) || 0;
-          const eng = Number(row['Engagement rate (total)']) || Number(row['Engagement rate (organic)']) || 0;
-          if (eng > 0) { w['Engagement rate (total)'] += eng; w._engCount++; }
-        });
-
-        // Average out engagement rates
-        const weekly = [...weeklyMap.values()].sort((a, b) => a.week.localeCompare(b.week));
-        weekly.forEach(w => {
-          if (w._engCount > 0) w['Engagement rate (total)'] /= w._engCount;
-          delete w._engCount;
-        });
-
-        // Parse posts
-        const posts = postsRaw.map(row => {
-          const impressions = Number(row['Impressions']) || 0;
-          const clicks = Number(row['Clicks']) || 0;
-          const likes = Number(row['Likes']) || 0;
-          const comments = Number(row['Comments']) || 0;
-          const reposts = Number(row['Reposts']) || 0;
-          const engRate = Number(row['Engagement rate']) || 0;
-          const engScore = likes + comments * 2 + reposts * 3;
-
-          let createdDate = row['Created date'] || '';
-          let postWeekKey = '';
-          if (typeof createdDate === 'number') {
-            const d = new Date((createdDate - 25569) * 86400 * 1000);
-            createdDate = d.toLocaleDateString('en-IN', { month: '2-digit', day: '2-digit', year: 'numeric' });
-            const day = d.getDay(); const diff = day === 0 ? 6 : day - 1;
-            const ws = new Date(d); ws.setDate(d.getDate() - diff);
-            postWeekKey = ws.toISOString().split('T')[0];
-          } else if (createdDate) {
-            const str = String(createdDate).trim();
-            const slashParts = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-            const isoStr = slashParts ? slashParts[3] + '-' + slashParts[1].padStart(2, '0') + '-' + slashParts[2].padStart(2, '0') : str;
-            const d = new Date(isoStr + 'T00:00:00');
-            if (!isNaN(d.getTime())) {
-              const day = d.getDay(); const diff = day === 0 ? 6 : day - 1;
-              const ws = new Date(d); ws.setDate(d.getDate() - diff);
-              postWeekKey = ws.toISOString().split('T')[0];
-            }
-          }
-
-          // Count post in its weekly bucket
-          if (postWeekKey && weeklyMap.has(postWeekKey)) {
-            weeklyMap.get(postWeekKey)['Posts']++;
-          }
-
-          return {
-            'Post title': row['Post title'] || '',
-            'Post link': row['Post link'] || '',
-            'Post type': row['Post type'] || (row['Campaign name'] ? 'Sponsored' : 'Organic'),
-            'Created date': createdDate,
-            'Posted by': row['Posted by'] || '',
-            'Impressions': impressions,
-            'Clicks': clicks,
-            'Likes': likes,
-            'Comments': comments,
-            'Reposts': reposts,
-            'Engagement rate': engRate,
-            'Content Type': row['Content Type'] || '',
-            engagement_score: engScore
-          };
-        }).sort((a, b) => b.engagement_score - a.engagement_score);
-
-        // Compute summary totals
-        const impressions_organic = weekly.reduce((s, w) => s + w['Impressions (organic)'], 0);
-        const impressions_sponsored = weekly.reduce((s, w) => s + w['Impressions (sponsored)'], 0);
-        const impressions_total = weekly.reduce((s, w) => s + w['Impressions (total)'], 0);
-        const clicks = weekly.reduce((s, w) => s + w['Clicks (total)'], 0);
-        const reactions = weekly.reduce((s, w) => s + w['Reactions (total)'], 0);
-        const comments = weekly.reduce((s, w) => s + w['Comments (total)'], 0);
-        const reposts = weekly.reduce((s, w) => s + w['Reposts (total)'], 0);
-        const new_followers = weekly.reduce((s, w) => s + (w['New followers (total)'] || 0), 0);
-        const new_followers_organic = weekly.reduce((s, w) => s + (w['New followers (organic)'] || 0), 0);
-        const new_followers_sponsored = weekly.reduce((s, w) => s + (w['New followers (sponsored)'] || 0), 0);
-        const avgEng = weekly.length ? weekly.reduce((s, w) => s + w['Engagement rate (total)'], 0) / weekly.length : 0;
-
-        let dateFrom = '', dateTo = '';
-        if (weekly.length) {
-          dateFrom = weekLabelAnalytics(weekly[0].week);
-          dateTo = weekLabelAnalytics(weekly[weekly.length - 1].week);
-        }
-
-        const summary = {
-          impressions_total, impressions_organic, impressions_sponsored,
-          clicks, reactions, comments, reposts,
-          new_followers, new_followers_organic, new_followers_sponsored,
-          avg_engagement: (avgEng * 100).toFixed(1),
-          total_posts: posts.length,
-          date_from: dateFrom, date_to: dateTo
-        };
-
-        const reportLabel = dateFrom && dateTo ? `${dateFrom} \u2013 ${dateTo}` : 'Analytics Report';
-
-        resolve({
-          metrics_data: weekly,
-          posts_data: posts,
-          summary,
-          report_label: reportLabel
-        });
-      } catch (err) {
-        reject(err);
-      }
-    }
-    if (existingWb) { doParse(existingWb); }
-    else {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        if (typeof XLSX === 'undefined') { reject(new Error('SheetJS library not loaded')); return; }
-        const data = new Uint8Array(e.target.result);
-        doParse(XLSX.read(data, { type: 'array' }));
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsArrayBuffer(file);
-    }
-  });
-}
-
-// --- Followers Report Parser ---
-function parseLinkedInFollowersReport(file, existingWb) {
-  return new Promise((resolve, reject) => {
-    function doParse(wb) {
-      try {
-        function parseSheet(ws) {
-          if (!ws) return [];
-          const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-          if (raw.length < 2) return [];
-          const headers = raw[0];
-          const rows = [];
-          for (let i = 1; i < raw.length; i++) {
-            const obj = {};
-            headers.forEach((h, idx) => { obj[String(h).trim()] = raw[i][idx] !== undefined ? raw[i][idx] : ''; });
-            rows.push(obj);
-          }
-          return rows;
-        }
-
-        function parseDateVal(dateVal) {
-          if (typeof dateVal === 'number') {
-            return new Date((dateVal - 25569) * 86400 * 1000).toISOString().split('T')[0];
-          } else if (dateVal instanceof Date) {
-            return dateVal.toISOString().split('T')[0];
-          }
-          const s = String(dateVal).trim();
-          const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-          return m ? m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0') : s;
-        }
-
-        // Parse "New followers" sheet → daily rows
-        const followersSheet = wb.Sheets[wb.SheetNames.find(s => /new follower/i.test(s)) || wb.SheetNames[0]];
-        const followersRaw = parseSheet(followersSheet);
-        const dailyFollowers = followersRaw.map(row => ({
-          date: parseDateVal(row['Date'] || ''),
-          organic: Number(row['Organic followers']) || 0,
-          sponsored: Number(row['Sponsored followers']) || 0,
-          total: Number(row['Total followers']) || 0
-        })).filter(r => r.date && r.date.length >= 8);
-
-        // Parse demographic sheets
-        function parseDemoSheet(sheetName, nameCol, countCol) {
-          const ws = wb.Sheets[wb.SheetNames.find(s => s.toLowerCase() === sheetName.toLowerCase())];
-          if (!ws) return [];
-          const rows = parseSheet(ws);
-          return rows.map(r => ({
-            name: String(r[nameCol] || '').trim(),
-            count: Number(r[countCol]) || 0
-          })).filter(r => r.name && r.count > 0).sort((a, b) => b.count - a.count);
-        }
-
-        const demographics_data = {
-          job_function: parseDemoSheet('Job function', 'Job function', 'Total followers'),
-          seniority: parseDemoSheet('Seniority', 'Seniority', 'Total followers'),
-          industry: parseDemoSheet('Industry', 'Industry', 'Total followers'),
-          company_size: parseDemoSheet('Company size', 'Company size', 'Total followers'),
-          location: parseDemoSheet('Location', 'Location', 'Total followers')
-        };
-
-        // Date range for label
-        let dateFrom = '', dateTo = '';
-        if (dailyFollowers.length) {
-          dateFrom = weekLabelAnalytics(dailyFollowers[0].date);
-          dateTo = weekLabelAnalytics(dailyFollowers[dailyFollowers.length - 1].date);
-        }
-        const reportLabel = dateFrom && dateTo ? `${dateFrom} – ${dateTo}` : 'Followers Report';
-
-        resolve({
-          metrics_data: dailyFollowers,
-          demographics_data,
-          report_label: reportLabel
-        });
-      } catch (err) { reject(err); }
-    }
-    if (existingWb) { doParse(existingWb); }
-    else {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        if (typeof XLSX === 'undefined') { reject(new Error('SheetJS library not loaded')); return; }
-        const data = new Uint8Array(e.target.result);
-        doParse(XLSX.read(data, { type: 'array' }));
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsArrayBuffer(file);
-    }
-  });
-}
-
-// --- Visitors Report Parser ---
-function parseLinkedInVisitorsReport(file, existingWb) {
-  return new Promise((resolve, reject) => {
-    function doParse(wb) {
-      try {
-
-        function parseSheet(ws) {
-          if (!ws) return [];
-          const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-          if (raw.length < 2) return [];
-          const headers = raw[0];
-          const rows = [];
-          for (let i = 1; i < raw.length; i++) {
-            const obj = {};
-            headers.forEach((h, idx) => { obj[String(h).trim()] = raw[i][idx] !== undefined ? raw[i][idx] : ''; });
-            rows.push(obj);
-          }
-          return rows;
-        }
-
-        function parseDateVal(dateVal) {
-          if (typeof dateVal === 'number') {
-            return new Date((dateVal - 25569) * 86400 * 1000).toISOString().split('T')[0];
-          } else if (dateVal instanceof Date) {
-            return dateVal.toISOString().split('T')[0];
-          }
-          const s = String(dateVal).trim();
-          const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-          return m ? m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0') : s;
-        }
-
-        // Parse "Visitor metrics" sheet
-        const visitorSheet = wb.Sheets[wb.SheetNames.find(s => /visitor metric/i.test(s)) || wb.SheetNames[0]];
-        const visitorRaw = parseSheet(visitorSheet);
-        const dailyVisitors = visitorRaw.map(row => ({
-          date: parseDateVal(row['Date'] || ''),
-          overview_views: Number(row['Overview page views (total)']) || 0,
-          overview_unique: Number(row['Overview unique visitors (total)']) || 0,
-          total_views: Number(row['Total page views (total)']) || 0,
-          total_unique: Number(row['Total unique visitors (total)']) || 0
-        })).filter(r => r.date && r.date.length >= 8);
-
-        // Parse demographic sheets (same as followers but count column = "Total views")
-        function parseDemoSheet(sheetName, nameCol, countCol) {
-          const ws = wb.Sheets[wb.SheetNames.find(s => s.toLowerCase() === sheetName.toLowerCase())];
-          if (!ws) return [];
-          const rows = parseSheet(ws);
-          return rows.map(r => ({
-            name: String(r[nameCol] || '').trim(),
-            count: Number(r[countCol]) || 0
-          })).filter(r => r.name && r.count > 0).sort((a, b) => b.count - a.count);
-        }
-
-        const demographics_data = {
-          job_function: parseDemoSheet('Job function', 'Job function', 'Total views'),
-          seniority: parseDemoSheet('Seniority', 'Seniority', 'Total views'),
-          industry: parseDemoSheet('Industry', 'Industry', 'Total views'),
-          company_size: parseDemoSheet('Company size', 'Company size', 'Total views'),
-          location: parseDemoSheet('Location', 'Location', 'Total views')
-        };
-
-        let dateFrom = '', dateTo = '';
-        if (dailyVisitors.length) {
-          dateFrom = weekLabelAnalytics(dailyVisitors[0].date);
-          dateTo = weekLabelAnalytics(dailyVisitors[dailyVisitors.length - 1].date);
-        }
-        const reportLabel = dateFrom && dateTo ? `${dateFrom} – ${dateTo}` : 'Visitors Report';
-
-        resolve({
-          visitor_metrics: dailyVisitors,
-          demographics_data,
-          report_label: reportLabel
-        });
-      } catch (err) { reject(err); }
-    }
-    if (existingWb) { doParse(existingWb); }
-    else {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        if (typeof XLSX === 'undefined') { reject(new Error('SheetJS library not loaded')); return; }
-        const data = new Uint8Array(e.target.result);
-        doParse(XLSX.read(data, { type: 'array' }));
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsArrayBuffer(file);
-    }
-  });
-}
-
-// --- Auto-detect LinkedIn report type from sheet names ---
-function detectReportType(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        if (typeof XLSX === 'undefined') { reject(new Error('SheetJS library not loaded')); return; }
-        const data = new Uint8Array(e.target.result);
-        const wb = XLSX.read(data, { type: 'array' });
-        const names = wb.SheetNames || [];
-        let type = null;
-        if (names.some(s => /new follower/i.test(s))) type = 'followers';
-        else if (names.some(s => /visitor metric/i.test(s))) type = 'visitors';
-        else if (names.some(s => /metric/i.test(s)) || names.some(s => /post/i.test(s))) type = 'content';
-        if (!type) { reject(new Error('Could not detect report type. Expected a LinkedIn Content, Followers, or Visitors export.')); return; }
-        resolve({ type, workbook: wb });
-      } catch (err) { reject(err); }
-    };
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-// --- Merge helper: appends new rows to existing, keyed by unique identifier ---
-function mergeByKey(existing, incoming, keyFn) {
-  const map = new Map();
-  (existing || []).forEach(r => map.set(keyFn(r), r));
-  (incoming || []).forEach(r => map.set(keyFn(r), r));
-  return [...map.values()];
-}
+// Analytics parsing toolkit (parsers, detectReportType, mergeByKey, format
+// helpers) lives in js/analytics.js — relocated verbatim in slice 6.
 
 // --- Upload Flow (auto-detect + append/merge) ---
 if (analyticsFileInput) {
@@ -8423,11 +9371,11 @@ if (analyticsFileInput) {
     if (!file) return;
     const ext = file.name.split('.').pop().toLowerCase();
     if (!['xls', 'xlsx', 'csv'].includes(ext)) {
-      alert('Only .xls, .xlsx, or .csv files are supported.');
+      colonyAlert('Only .xls, .xlsx, or .csv files are supported.');
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
-      alert('File too large (max 20 MB).');
+      colonyAlert('File too large (max 20 MB).');
       return;
     }
     if (!analyticsCurrentClientId) return;
@@ -8438,7 +9386,9 @@ if (analyticsFileInput) {
     try {
       // Auto-detect report type from sheet names
       const { type: reportType, workbook } = await detectReportType(file);
-      if (detectedLabel) { detectedLabel.textContent = reportType.charAt(0).toUpperCase() + reportType.slice(1) + ' report detected'; detectedLabel.style.display = ''; }
+      // Instagram metrics CSVs live on the same DB row as the post export
+      const dbReportType = reportType === 'instagram_metrics' ? 'instagram' : reportType;
+      if (detectedLabel) { detectedLabel.textContent = (reportType.charAt(0).toUpperCase() + reportType.slice(1)).replace(/_/g, ' ') + ' report detected'; detectedLabel.style.display = ''; }
 
       // Parse using detected type (reuse already-read workbook)
       let parsed;
@@ -8448,8 +9398,38 @@ if (analyticsFileInput) {
         parsed = await parseLinkedInFollowersReport(file, workbook);
       } else if (reportType === 'visitors') {
         parsed = await parseLinkedInVisitorsReport(file, workbook);
+      } else if (reportType === 'instagram') {
+        parsed = await parseInstagramAnalytics(file, workbook);
+      } else if (reportType === 'community_pulse') {
+        parsed = await parseCommunityPulse(file, workbook);
+      } else if (reportType === 'instagram_metrics') {
+        parsed = await parseInstagramMetricsCsv(file, workbook);
       }
       if (!parsed) throw new Error('Unknown report type');
+
+      // Instagram-only: warn if the file's IG account looks like it belongs
+      // to a DIFFERENT existing client than the current page.
+      if (reportType === 'instagram') {
+        const suggestion = findIgClientSuggestion(
+          parsed.summary?.account_name,
+          parsed.summary?.account_username,
+          analyticsCurrentClientId
+        );
+        if (suggestion) {
+          const currentClient = (state.clients || []).find(c => c.id === analyticsCurrentClientId);
+          const acct = parsed.summary?.account_name || parsed.summary?.account_username || 'this account';
+          const ok = await colonyConfirm(
+            `Heads up: this Instagram export is for "${acct}", which looks like it belongs to "${suggestion.name}".\n\n` +
+            `You're currently uploading on "${currentClient?.name || 'the current client'}'s" page.\n\n` +
+            `Continue and attach to ${currentClient?.name || 'the current client'} anyway?`
+          );
+          if (!ok) {
+            analyticsFileInput.value = '';
+            if (detectedLabel) detectedLabel.style.display = 'none';
+            return;
+          }
+        }
+      }
 
       // Upload raw file to storage
       const filePath = `${analyticsCurrentClientId}/${Date.now()}_${file.name}`;
@@ -8461,9 +9441,9 @@ if (analyticsFileInput) {
       // Fetch existing record for this client + type (for merging)
       const { data: existing } = await state.supabase
         .from('client_analytics')
-        .select('metrics_data, posts_data, summary, demographics_data, visitor_metrics')
+        .select('report_label, metrics_data, posts_data, summary, demographics_data, visitor_metrics')
         .eq('client_id', analyticsCurrentClientId)
-        .eq('report_type', reportType)
+        .eq('report_type', dbReportType)
         .maybeSingle();
 
       // Merge parsed data with existing data (append, not replace)
@@ -8514,21 +9494,94 @@ if (analyticsFileInput) {
         if (metaEl) {
           metaEl.textContent = newItemCount > 0 ? `\u2713 Visitors report merged \u2014 ${newItemCount} new day${newItemCount > 1 ? 's' : ''} added` : '\u2713 Visitors report updated';
         }
+      } else if (reportType === 'instagram') {
+        const oldPosts = existing?.posts_data || [];
+        mergedPosts = mergeByKey(oldPosts, parsed.posts_data, r => r.post_id)
+          .sort((a, b) => (b.views || 0) - (a.views || 0));
+        const newPostCount = mergedPosts.length - oldPosts.length;
+
+        // Recompute summary from merged posts
+        const sum = (k) => mergedPosts.reduce((s, p) => s + (Number(p[k]) || 0), 0);
+        const totalReach = sum('reach');
+        const totalEng = sum('likes') + sum('comments') + sum('saves') + sum('shares');
+        const engagementRate = totalReach > 0 ? (totalEng / totalReach) : 0;
+        const dates = mergedPosts
+          .map(p => p.date || (p.publish_time || '').slice(0, 10))
+          .filter(Boolean).sort();
+
+        mergedSummary = {
+          total_posts: mergedPosts.length,
+          total_views: sum('views'),
+          total_reach: totalReach,
+          total_likes: sum('likes'),
+          total_comments: sum('comments'),
+          total_saves: sum('saves'),
+          total_shares: sum('shares'),
+          total_follows: sum('follows'),
+          engagement_rate: engagementRate,
+          avg_engagement: (engagementRate * 100).toFixed(2),
+          date_from: dates[0] || '',
+          date_to: dates[dates.length - 1] || '',
+          account_name: parsed.summary?.account_name || '',
+          account_username: parsed.summary?.account_username || ''
+        };
+        newItemCount = newPostCount;
+        if (metaEl) {
+          metaEl.textContent = newPostCount > 0
+            ? `\u2713 Instagram report merged \u2014 ${newPostCount} new post${newPostCount > 1 ? 's' : ''}`
+            : '\u2713 Instagram report updated';
+        }
+      } else if (reportType === 'instagram_metrics') {
+        // One metric per file; each upload sets its metric's column on the
+        // shared per-date rows (so Follows.csv then Views.csv build up
+        // {date, follows, views} without clobbering each other).
+        const oldMetrics = existing?.metrics_data || [];
+        const byDate = new Map(oldMetrics.map(r => [r.date, { ...r }]));
+        parsed.daily.forEach(d => {
+          const row = byDate.get(d.date) || { date: d.date };
+          row[parsed.metric] = d.value;
+          byDate.set(d.date, row);
+        });
+        mergedMetrics = [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        newItemCount = mergedMetrics.length - oldMetrics.length;
+        if (metaEl) {
+          metaEl.textContent = `✓ Instagram ${parsed.metricLabel.toLowerCase()} merged — ${parsed.daily.length} day${parsed.daily.length > 1 ? 's' : ''}`;
+        }
+      } else if (reportType === 'community_pulse') {
+        // Sends merge by date+name; subscriber/forum demographics are
+        // point-in-time snapshots and always replace. Summary recomputed
+        // from the merged sends (communityPulseSummary, js/analytics.js).
+        const oldMetrics = existing?.metrics_data || [];
+        mergedMetrics = mergeByKey(oldMetrics, parsed.metrics_data, r => `${r.date}|${r.name}`)
+          .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        mergedDemographics = parsed.demographics_data;
+        mergedSummary = communityPulseSummary(mergedMetrics, mergedDemographics);
+        newItemCount = mergedMetrics.length - oldMetrics.length;
+        if (metaEl) {
+          metaEl.textContent = newItemCount > 0
+            ? `\u2713 Community pulse merged \u2014 ${newItemCount} new send${newItemCount > 1 ? 's' : ''}`
+            : '\u2713 Community pulse updated';
+        }
       }
 
       // Build DB record with merged data
-      const reportLabel = reportType === 'content' && mergedSummary
+      const reportLabel = (reportType === 'content' || reportType === 'instagram') && mergedSummary
         ? (mergedSummary.date_from && mergedSummary.date_to ? `${mergedSummary.date_from} \u2013 ${mergedSummary.date_to}` : parsed.report_label)
         : parsed.report_label;
 
       const record = {
         client_id: analyticsCurrentClientId,
-        report_type: reportType,
+        report_type: dbReportType,
         report_label: reportLabel,
         file_name: file.name,
         file_path: filePath,
         file_size_bytes: file.size,
         uploaded_by: state.currentEmployeeId,
+        // Must be set explicitly: the upsert UPDATEs the existing row on
+        // re-upload, so the DB default only fires on first insert — without
+        // this, "Data uploaded until" and the Tuesday staleness reminder
+        // keep seeing the FIRST upload's date forever.
+        uploaded_at: new Date().toISOString(),
         insights_cache: {} // clear cache to force re-generation
       };
 
@@ -8542,7 +9595,38 @@ if (analyticsFileInput) {
       } else if (reportType === 'visitors') {
         record.visitor_metrics = mergedVisitorMetrics;
         record.demographics_data = mergedDemographics;
+      } else if (reportType === 'instagram') {
+        record.posts_data = mergedPosts;
+        record.summary = mergedSummary;
+      } else if (reportType === 'instagram_metrics') {
+        // Only the daily-metrics column; the row's posts/summary (if any)
+        // are preserved by the upsert since they're omitted from the payload.
+        // report_label must ALWAYS be sent: PostgREST upsert is an INSERT ..
+        // ON CONFLICT, and Postgres enforces NOT NULL on the proposed insert
+        // row before conflict resolution — omitting it broke every upload
+        // onto an existing row (an AM's second metrics CSV, 14 Jul 2026).
+        record.metrics_data = mergedMetrics;
+        record.report_label = existing?.report_label
+          || (mergedMetrics.length
+            ? `${mergedMetrics[0].date} – ${mergedMetrics[mergedMetrics.length - 1].date}`
+            : parsed.metricLabel);
+      } else if (reportType === 'community_pulse') {
+        record.metrics_data = mergedMetrics;
+        record.demographics_data = mergedDemographics;
+        record.summary = mergedSummary;
+        record.report_label = mergedSummary.date_from && mergedSummary.date_to
+          ? `${mergedSummary.date_from} – ${mergedSummary.date_to}`
+          : parsed.report_label;
       }
+
+      // Data coverage end — staleness truth for the header + Tuesday reminder
+      // (never uploaded_at; see computeDataThrough in js/analytics.js)
+      record.data_through = computeDataThrough(dbReportType, {
+        metricsData: record.metrics_data ?? existing?.metrics_data,
+        postsData: record.posts_data ?? existing?.posts_data,
+        visitorMetrics: record.visitor_metrics ?? existing?.visitor_metrics,
+        summary: record.summary ?? existing?.summary
+      });
 
       // Upsert using unique index (client_id, report_type)
       const { error: dbError } = await state.supabase
@@ -8557,7 +9641,7 @@ if (analyticsFileInput) {
       setTimeout(() => { if (analyticsCurrentClientId) renderClientAnalyticsTab(analyticsCurrentClientId); }, 4000);
     } catch (err) {
       console.error('Analytics upload error:', err);
-      alert('Upload failed: ' + err.message);
+      colonyAlert('Upload failed: ' + err.message);
     }
   });
 }
@@ -8575,15 +9659,1160 @@ function destroyAnalyticsCharts() {
   }
 }
 
-// Target persona definitions (hardcoded for altM)
-const ANALYTICS_TARGET_INDUSTRIES = ['Pharmaceuticals', 'Biotechnology', 'Chemical Manufacturing', 'Research Services'];
-const ANALYTICS_TARGET_JOB_FUNCTIONS = ['Research', 'Engineering', 'Business Development'];
-const ANALYTICS_DECISION_MAKER_SENIORITY = ['Manager', 'Director', 'VP', 'CXO', 'Owner', 'Partner'];
+// Per-client target persona definitions for Audience Intelligence.
+// Keyed by normalized client name (normalizeClientNameKey). Clients without an
+// entry get plain demographic bars — no green target highlighting, legend, or
+// quality snapshot, since those metrics only mean something against a defined
+// persona. Add new clients here as their personas get agreed.
+const ANALYTICS_PERSONAS_BY_CLIENT = {
+  'helixlabs': {
+    industries: ['Pharmaceuticals', 'Biotechnology', 'Chemical Manufacturing', 'Research Services'],
+    industriesLabel: 'Pharma, Biotech, Chemical, Research',
+    jobFunctions: ['Research', 'Engineering', 'Business Development'],
+    jobFunctionsLabel: 'Research, Engineering, BizDev',
+    decisionMakerSeniority: ['Manager', 'Director', 'VP', 'CXO', 'Owner', 'Partner'],
+    seniorityLabel: 'Manager – CXO'
+  }
+};
+
+function currentAnalyticsPersona() {
+  const client = (state.clients || []).find(c => String(c.id) === String(analyticsCurrentClientId));
+  // DB-backed (app_config 'analytics_personas_by_client', superadmin-editable
+  // in Admin Settings → Operational Config) with the in-code map as fallback —
+  // new client personas need no deploy.
+  const personas = getConfigMap('analytics_personas_by_client', ANALYTICS_PERSONAS_BY_CLIENT);
+  return personas[normalizeClientNameKey(client?.name)] || null;
+}
 
 // State for current analytics data
 window._analyticsReports = {}; // { content, followers, visitors }
 
 // --- Main Analytics Screen Renderer ---
+// ────────── Client Scope & Coverage (leadership-only) ──────────
+// State for the currently-loaded client view
+const scopeCoverageState = {
+  clientId: null,
+  client: null,
+  scopeItems: [],          // [{ id, title, scope_type, description, owner_employee_id, sort_order, needs: [{id, department_id, percent_need, specialty_note}] }]
+  allocations: [],         // standing allocations on this client
+  allAllocations: [],      // ALL standing allocations across all clients (for total util)
+  deptOptions: [],         // [{ id, name }] — the 5 disciplines
+  employeeOptions: [],     // [{ id, full_name, department_id, department_name }]
+  scopeFormState: null,    // { editingId | 'new', data: { title, scope_type, description, owner_employee_id, needs: [...] } }
+  allocFormState: null,    // { editingId | 'new', data: { employee_id, department_id, percent, notes } }
+  viewMonth: null          // {y, m} — month being viewed; null = current
+};
+
+// DEMO: pretend month range per scope item until DB has start/end columns.
+// Anything that looks like a one-off project (refresh / launch / campaign) → May 2026 only.
+function parseYM(str) {
+  if (!str || typeof str !== 'string') return null;
+  const m = str.match(/^(\d{4})-(\d{1,2})/);
+  if (!m) return null;
+  return { y: Number(m[1]), m: Number(m[2]) };
+}
+function getScopeMonthRange(item) {
+  // Both retainers and projects may have an optional month range.
+  let start = parseYM(item.start_month);
+  let end = parseYM(item.end_month);
+  if (start && !end) end = start;
+  if (end && !start) start = end;
+  if (start || end) return { start, end };
+  // DEMO fallback for projects with no dates yet
+  const t = (item.title || '').toLowerCase();
+  if (/refresh|launch|campaign|relaunch|sprint|burst/.test(t)) {
+    return { start: { y: 2026, m: 5 }, end: { y: 2026, m: 5 } };
+  }
+  return { start: null, end: null };
+}
+function isItemActiveInMonth(item, ym) {
+  const r = getScopeMonthRange(item);
+  if (!r.start && !r.end) return true;
+  const key = ym.y * 12 + ym.m;
+  if (r.start && key < r.start.y * 12 + r.start.m) return false;
+  if (r.end && key > r.end.y * 12 + r.end.m) return false;
+  return true;
+}
+function formatMonthLabel(ym) {
+  if (!ym) return '—';
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${names[ym.m - 1]} ${ym.y}`;
+}
+function getCurrentViewMonth() {
+  if (scopeCoverageState.viewMonth) return scopeCoverageState.viewMonth;
+  const d = new Date();
+  return { y: d.getFullYear(), m: d.getMonth() + 1 };
+}
+function shiftMonth(ym, delta) {
+  const k = ym.y * 12 + (ym.m - 1) + delta;
+  return { y: Math.floor(k / 12), m: (k % 12) + 1 };
+}
+
+const SCOPE_DISCIPLINE_NAMES = ['AM', 'Art', 'Copy', 'Video', 'Strategy'];
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+(function wireScopeCoverageBackLink() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('#scBackToClients, #scBackBtn');
+    if (!link) return;
+    event.preventDefault();
+    navigateToScreen('client-projects');
+  });
+  document.addEventListener('click', (event) => {
+    const prev = event.target.closest('#scMonthPrev');
+    const next = event.target.closest('#scMonthNext');
+    if (!prev && !next) return;
+    const cur = getCurrentViewMonth();
+    scopeCoverageState.viewMonth = shiftMonth(cur, prev ? -1 : 1);
+    renderMonthSwitcher();
+    renderScopeBlocks();
+  });
+})();
+
+function renderMonthSwitcher() {
+  const el = document.getElementById('scMonthLabel');
+  if (el) el.textContent = formatMonthLabel(getCurrentViewMonth());
+}
+
+async function loadScopeCoverageReferenceData() {
+  // Departments (only the 5 disciplines)
+  if (!scopeCoverageState.deptOptions.length) {
+    const deptRes = await state.supabase
+      .from('departments')
+      .select('id, name')
+      .in('name', SCOPE_DISCIPLINE_NAMES);
+    if (deptRes.error) throw deptRes.error;
+    // Sort by SCOPE_DISCIPLINE_NAMES order
+    scopeCoverageState.deptOptions = SCOPE_DISCIPLINE_NAMES
+      .map((n) => (deptRes.data || []).find((d) => d.name === n))
+      .filter(Boolean);
+  }
+
+  // Employees (active, in one of the 5 disciplines)
+  const validDeptIds = new Set(scopeCoverageState.deptOptions.map((d) => d.id));
+  scopeCoverageState.employeeOptions = (state.employeeDirectory || [])
+    .filter((emp) => emp.is_active !== false && emp.department && validDeptIds.has(emp.department.id)
+      && !getHiddenEmployeeEmails().includes(normalizeEmail(emp.email || '')))
+    .map((emp) => ({
+      id: emp.id,
+      full_name: emp.full_name,
+      department_id: emp.department.id,
+      department_name: emp.department.name
+    }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  // Owner dropdown should be wide open: every active employee, regardless of discipline.
+  scopeCoverageState.ownerOptions = (state.employeeDirectory || [])
+    .filter((emp) => emp.is_active !== false && !/finance/i.test(emp.full_name || ''))
+    .map((emp) => ({
+      id: emp.id,
+      full_name: emp.full_name,
+      department_name: emp.department?.name || ''
+    }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+}
+
+async function loadScopeCoverageDataForClient(clientId) {
+  // Scope items + nested discipline needs
+  const scopeRes = await state.supabase
+    .from('client_scope_items')
+    .select('id, client_id, title, scope_type, description, owner_employee_id, sort_order, is_active, start_month, end_month, client_scope_discipline_needs(id, department_id, percent_need, specialty_note)')
+    .eq('client_id', clientId)
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true });
+  if (scopeRes.error) throw scopeRes.error;
+  scopeCoverageState.scopeItems = (scopeRes.data || []).map((row) => ({
+    ...row,
+    needs: row.client_scope_discipline_needs || []
+  }));
+
+  // Standing allocations on THIS client
+  const allocRes = await state.supabase
+    .from('client_standing_allocations')
+    .select('id, client_id, employee_id, department_id, percent, notes, scope_item_id')
+    .eq('client_id', clientId);
+  if (allocRes.error) throw allocRes.error;
+  scopeCoverageState.allocations = allocRes.data || [];
+
+  // ALL standing allocations across ALL clients (for total utilization math)
+  const allAllocRes = await state.supabase
+    .from('client_standing_allocations')
+    .select('employee_id, percent, client_id, scope_item_id');
+  if (allAllocRes.error) throw allAllocRes.error;
+  scopeCoverageState.allAllocations = allAllocRes.data || [];
+
+  // All scope items (id -> {start_month,end_month,scope_type,is_active}) for month-aware util across clients.
+  const allScopeRes = await state.supabase
+    .from('client_scope_items')
+    .select('id, start_month, end_month, scope_type, is_active');
+  if (!allScopeRes.error) {
+    scopeCoverageState.allScopeItemsById = new Map((allScopeRes.data || []).map((s) => [s.id, s]));
+  } else {
+    scopeCoverageState.allScopeItemsById = new Map();
+  }
+}
+
+// True if an allocation contributes utilization in the given YYYY-MM month.
+// Null scope_item_id = client-wide/retainer = always active.
+// Linked scope item: retainer = always; project = only if month in [start,end].
+function isAllocActiveInMonth(alloc, monthStr) {
+  if (!alloc || !alloc.scope_item_id) return true;
+  const scope = (scopeCoverageState.allScopeItemsById && scopeCoverageState.allScopeItemsById.get(alloc.scope_item_id))
+    || scopeCoverageState.scopeItems.find((s) => s.id === alloc.scope_item_id);
+  if (!scope) return true;
+  if (scope.is_active === false) return false;
+  return isItemActiveInMonth(scope, monthStr);
+}
+
+function getEmployeeTotalUtil(employeeId) {
+  const month = getCurrentViewMonth();
+  return scopeCoverageState.allAllocations
+    .filter((a) => a.employee_id === employeeId && isAllocActiveInMonth(a, month))
+    .reduce((sum, a) => sum + Number(a.percent || 0), 0);
+}
+
+function getEmployeeName(employeeId) {
+  if (!employeeId) return '—';
+  const fromState = scopeCoverageState.employeeOptions.find((e) => e.id === employeeId);
+  if (fromState) return fromState.full_name;
+  const fromDir = (state.employeeDirectory || []).find((e) => e.id === employeeId);
+  return fromDir?.full_name || '—';
+}
+
+function getDeptName(deptId) {
+  const d = scopeCoverageState.deptOptions.find((x) => x.id === deptId);
+  return d ? scopeDeptLabel(d.name) : '—';
+}
+window.getDeptName = getDeptName;
+window.scopeDeptLabel = scopeDeptLabel;
+
+// ── Coverage brain ─────────────────────────────────────────────
+// Returns coverage class for a single (scopeItem, deptId, percentNeed) tuple
+function classifyCoverage(deptId, percentNeed) {
+  const allocRows = scopeCoverageState.allocations.filter((a) => a.department_id === deptId);
+  const sumAlloc = allocRows.reduce((sum, a) => sum + Number(a.percent || 0), 0);
+  const anyMaxed = allocRows.some((a) => getEmployeeTotalUtil(a.employee_id) >= 100);
+  if (sumAlloc <= 0) return 'gap';
+  if (sumAlloc < Number(percentNeed || 0)) return 'tight';
+  if (anyMaxed) return 'tight';
+  return 'ok';
+}
+
+// Roll-up across the entire client: returns { totalAlloc, totalNeed, byDept: { deptId: { alloc, need, label } }, overallStatus, gapDisciplines: [...] }
+function computeCoverageRollup() {
+  const byDept = {};
+  for (const dept of scopeCoverageState.deptOptions) {
+    byDept[dept.id] = {
+      label: scopeDeptLabel(dept.name),
+      need: 0,
+      alloc: 0,
+      status: 'ok',
+      assignees: []
+    };
+  }
+  // Sum needs across scope items
+  for (const item of scopeCoverageState.scopeItems) {
+    for (const n of item.needs) {
+      if (byDept[n.department_id]) {
+        byDept[n.department_id].need += Number(n.percent_need || 0);
+      }
+    }
+  }
+  // Sum allocations
+  for (const a of scopeCoverageState.allocations) {
+    if (byDept[a.department_id]) {
+      byDept[a.department_id].alloc += Number(a.percent || 0);
+      byDept[a.department_id].assignees.push({
+        id: a.employee_id,
+        name: getEmployeeName(a.employee_id),
+        util: getEmployeeTotalUtil(a.employee_id)
+      });
+    }
+  }
+  // Per-dept status
+  let overallStatus = 'ok';
+  const gapDisciplines = [];
+  for (const id of Object.keys(byDept)) {
+    const d = byDept[id];
+    if (d.need <= 0) { d.status = 'na'; continue; }
+    const anyMaxed = d.assignees.some((p) => p.util >= 100);
+    if (d.alloc <= 0) {
+      d.status = 'gap';
+      overallStatus = 'gap';
+      gapDisciplines.push({ ...d });
+    } else if (d.alloc < d.need) {
+      d.status = 'tight';
+      if (overallStatus !== 'gap') overallStatus = 'tight';
+      gapDisciplines.push({ ...d });
+    } else if (anyMaxed) {
+      d.status = 'tight';
+      if (overallStatus !== 'gap') overallStatus = 'tight';
+    } else {
+      d.status = 'ok';
+    }
+  }
+  const totalAlloc = scopeCoverageState.allocations.reduce((s, a) => s + Number(a.percent || 0), 0);
+  const totalNeed = Object.values(byDept).reduce((s, d) => s + d.need, 0);
+  return { byDept, totalAlloc, totalNeed, overallStatus, gapDisciplines };
+}
+
+// ── Main render ────────────────────────────────────────────────
+async function renderClientScopeCoverage(clientId) {
+  const client = state.clients.find((c) => String(c.id) === String(clientId));
+  if (!client) {
+    setText('scClientName', 'Client not found');
+    setText('scClientCrumb', '—');
+    setText('scClientSub', '');
+    return;
+  }
+
+  scopeCoverageState.clientId = clientId;
+  scopeCoverageState.client = client;
+  scopeCoverageState.scopeFormState = null;
+  scopeCoverageState.allocFormState = null;
+  scopeCoverageState.viewMonth = null;
+  setTimeout(renderMonthSwitcher, 0);
+
+  // Header
+  setText('scClientName', client.name || 'Untitled client');
+  setText('scClientCrumb', client.name || '—');
+
+  const tagsEl = document.getElementById('scClientTags');
+  if (tagsEl) {
+    const typeTag = client.type === 'retainer'
+      ? '<span class="sc-tag retainer">Retainer</span>'
+      : client.type === 'pitch'
+        ? '<span class="sc-tag">Pitch</span>'
+        : '<span class="sc-tag project">Project</span>';
+    const statusTag = (client.is_active === false)
+      ? '<span class="sc-tag paused">Archived</span>'
+      : '<span class="sc-tag active">Active</span>';
+    tagsEl.innerHTML = typeTag + statusTag;
+  }
+
+  setText('scClientSub', `Owner: ${escapeHtml(client.owner || '—')}`);
+
+  // Loading placeholders
+  const scopeList = document.getElementById('scScopeList');
+  if (scopeList) scopeList.innerHTML = '<div class="sc-empty">Loading scope…</div>';
+  const allocBody = document.getElementById('scAllocBody');
+  if (allocBody) allocBody.innerHTML = '<tr><td colspan="6" class="sc-empty-row">Loading allocations…</td></tr>';
+
+  try {
+    await loadScopeCoverageReferenceData();
+    await loadScopeCoverageDataForClient(clientId);
+  } catch (err) {
+    console.error('Scope coverage load failed:', err);
+    if (scopeList) scopeList.innerHTML = `<div class="sc-empty">Failed to load: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  try {
+    rerenderScopeCoverage();
+  } catch (err) {
+    console.error('Scope coverage render failed:', err);
+    if (scopeList) scopeList.innerHTML = `<div class="sc-empty">Render failed: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function rerenderScopeCoverage() {
+  renderScopeBlocks();
+  renderAllocationRows();
+  renderScopeCoverageStats();
+}
+
+function renderScopeCoverageStats() {
+  const rollup = computeCoverageRollup();
+  const items = scopeCoverageState.scopeItems;
+  const allocs = scopeCoverageState.allocations;
+
+  // Stat 1: Scope Items
+  setText('scStatScopeCount', String(items.length));
+  const distinctDisc = new Set();
+  items.forEach((it) => it.needs.forEach((n) => distinctDisc.add(n.department_id)));
+  setText('scStatScopeDelta', items.length ? `across ${distinctDisc.size} discipline${distinctDisc.size === 1 ? '' : 's'}` : 'no scope yet');
+
+  // Stat 2: Team Allocated
+  const distinctPeople = new Set(allocs.map((a) => a.employee_id));
+  setText('scStatTeamCount', `${distinctPeople.size} ${distinctPeople.size === 1 ? 'person' : 'people'}`);
+  setText('scStatTeamDelta', '');
+
+  // Stat 3: Coverage
+  const coverageEl = document.getElementById('scStatCoverage');
+  const coverageDeltaEl = document.getElementById('scStatCoverageDelta');
+  if (coverageEl && coverageDeltaEl) {
+    coverageEl.classList.remove('amber', 'red', 'green');
+    if (!items.length) {
+      coverageEl.textContent = '—';
+      coverageDeltaEl.textContent = 'awaiting scope';
+    } else if (rollup.overallStatus === 'ok') {
+      coverageEl.textContent = 'OK';
+      coverageEl.classList.add('green');
+      coverageDeltaEl.textContent = 'all disciplines covered';
+    } else if (rollup.overallStatus === 'tight') {
+      coverageEl.textContent = 'Tight';
+      coverageEl.classList.add('amber');
+      coverageDeltaEl.textContent = `${rollup.gapDisciplines.length} discipline${rollup.gapDisciplines.length === 1 ? '' : 's'} under-resourced`;
+    } else {
+      coverageEl.textContent = 'Gap';
+      coverageEl.classList.add('red');
+      coverageDeltaEl.textContent = `${rollup.gapDisciplines.length} discipline${rollup.gapDisciplines.length === 1 ? '' : 's'} with gaps`;
+    }
+  }
+
+  // Gap banner
+  const banner = document.getElementById('scGapBanner');
+  if (banner) {
+    if (!items.length || rollup.overallStatus === 'ok') {
+      banner.style.display = 'none';
+    } else {
+      const parts = rollup.gapDisciplines.map((d) => {
+        if (d.assignees.length === 0) {
+          return `<b>${escapeHtml(d.label)}</b> (nobody assigned, need ${d.need.toFixed(0)}%)`;
+        }
+        const names = d.assignees.map((p) => `${escapeHtml(p.name)} at ${p.util.toFixed(0)}%`).join(', ');
+        return `<b>${escapeHtml(d.label)}</b> (${names}; need ${d.need.toFixed(0)}%, have ${d.alloc.toFixed(0)}%)`;
+      });
+      banner.style.display = '';
+      banner.innerHTML = `<b>Resourcing gap:</b> Scope needs ${parts.join(' and ')}. <b>Bench candidates flagged.</b>`;
+    }
+  }
+
+  // Δ line
+  const deltaLine = document.getElementById('scDeltaLine');
+  if (deltaLine) {
+    const delta = rollup.totalAlloc - rollup.totalNeed;
+    const deltaSign = delta >= 0 ? '+' : '';
+    const deltaClass = delta < 0 ? 'red' : delta === 0 ? 'amber' : 'green';
+    const breakdown = Object.values(rollup.byDept)
+      .filter((d) => d.need > 0 && d.alloc < d.need)
+      .map((d) => `${d.label} ${(d.alloc - d.need).toFixed(0)}%`)
+      .join(', ');
+    deltaLine.innerHTML = `Total allocated: <b>${rollup.totalAlloc.toFixed(0)}%</b> · Scope implies ~<b>${rollup.totalNeed.toFixed(0)}%</b> · <b class="${deltaClass}">Δ ${deltaSign}${delta.toFixed(0)}%</b>${breakdown ? ` (${escapeHtml(breakdown)})` : ''}`;
+  }
+}
+
+// ── Scope CRUD ─────────────────────────────────────────────────
+function renderScopeBlocks() {
+  const container = document.getElementById('scScopeList');
+  if (!container) return;
+  const items = scopeCoverageState.scopeItems;
+  const formState = scopeCoverageState.scopeFormState;
+
+  if (!items.length && !formState) {
+    container.innerHTML = '<div class="sc-empty">No scope items yet. Add the first deliverable from the contract.</div>';
+    return;
+  }
+
+  // Sort: in-month first (preserving sort_order), then out-of-month at the bottom.
+  const vm = getCurrentViewMonth();
+  const sortedItems = [...items].sort((a, b) => {
+    const aIn = isItemActiveInMonth(a, vm) ? 0 : 1;
+    const bIn = isItemActiveInMonth(b, vm) ? 0 : 1;
+    if (aIn !== bIn) return aIn - bIn;
+    return (a.sort_order || 0) - (b.sort_order || 0);
+  });
+  let html = '';
+  for (const item of sortedItems) {
+    try {
+      if (formState && formState.editingId === item.id) {
+        html += renderScopeForm(formState);
+      } else {
+        html += renderScopeBlock(item);
+      }
+    } catch (err) {
+      console.error('renderScopeBlock failed for item', item?.id, err);
+      html += `<div class="sc-empty">Render error on "${escapeHtml(item?.title || item?.id || 'item')}": ${escapeHtml(err.message)}</div>`;
+    }
+  }
+  if (formState && formState.editingId === 'new') {
+    html += renderScopeForm(formState);
+  }
+  container.innerHTML = html;
+}
+
+function renderScopeBlock(item) {
+  const eid = escapeHtml(item.id);
+  const typeLabel = item.scope_type === 'project' ? 'Project' : 'Retainer';
+  const ym = getCurrentViewMonth();
+  const range = getScopeMonthRange(item);
+  const isOngoing = !range.start && !range.end;
+  const inMonth = isItemActiveInMonth(item, ym);
+  const outClass = '';
+  const monthBadge = isOngoing
+    ? '<span class="sc-month-badge ongoing">Retainer</span>'
+    : `<span class="sc-month-badge ${inMonth ? 'active' : ''}">${formatMonthLabel(range.start)}${range.end && (range.end.y !== range.start.y || range.end.m !== range.start.m) ? ' – ' + formatMonthLabel(range.end) : ''}</span>`;
+  const ownerName = item.owner_employee_id ? getEmployeeName(item.owner_employee_id) : null;
+  const ownerLine = ownerName ? ` · Owned by ${escapeHtml(ownerName)}` : '';
+
+  // People allocated to this scope item
+  const peopleAllocs = (scopeCoverageState.allocations || []).filter((a) => a.scope_item_id === item.id);
+  const peopleHtml = peopleAllocs.length
+    ? peopleAllocs.map((a) => `
+        <span class="sc-person-chip">
+          <b>${escapeHtml(getEmployeeName(a.employee_id))}</b>
+          <span class="sc-person-meta">${escapeHtml(getDeptName(a.department_id))} · ${Number(a.percent || 0).toFixed(0)}%</span>
+          ${canEditScopeCoverage() ? `<a class="sc-person-x" data-sc-action="remove-alloc" data-id="${escapeHtml(a.id)}" title="Remove">×</a>` : ''}
+        </span>
+      `).join('')
+    : '';
+  const addPersonLink = canEditScopeCoverage()
+    ? `<a class="sc-add-person-link" data-sc-action="add-person-to-scope" data-id="${eid}">+ add person</a>`
+    : '';
+
+  // Inline add-person form (when the form state targets this scope item)
+  const inlineForm = (() => {
+    const fs = scopeCoverageState.allocFormState;
+    if (!fs || fs.editingId !== 'new' || fs.data?.scope_item_id !== item.id) return '';
+    const data = fs.data;
+    const empSource = (state.employeeDirectory || [])
+      .filter((e) => e.is_active !== false && !getHiddenEmployeeEmails().includes(normalizeEmail(e.email || '')))
+      .map((e) => ({ id: e.id, full_name: e.full_name, department_id: e.department?.id || '' }))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    const empOpts = '<option value="">Select person</option>' + empSource
+      .map((e) => `<option value="${escapeHtml(e.id)}" data-dept-id="${escapeHtml(e.department_id)}"${e.id === data.employee_id ? ' selected' : ''}>${escapeHtml(e.full_name)}</option>`).join('');
+    return `
+      <div class="sc-inline-alloc-form" data-scope-inline="${eid}">
+        <select data-inline-alloc="employee_id" onchange="(function(s){var o=s.options[s.selectedIndex];var did=o&&o.getAttribute('data-dept-id')||'';s.closest('.sc-inline-alloc-form').querySelector('[data-inline-alloc=&quot;department_id&quot;]').value=did;})(this)">${empOpts}</select>
+        <input type="hidden" data-inline-alloc="department_id" value="${escapeHtml(data.department_id || '')}" />
+        <input type="number" min="0" max="200" step="1" placeholder="%" value="${data.percent === '' || data.percent == null ? '' : Number(data.percent)}" data-inline-alloc="percent" style="width:60px" />
+        <button class="sc-btn primary" type="button" data-sc-action="save-inline-alloc" data-id="${eid}">Save</button>
+        <button class="sc-btn" type="button" data-sc-action="cancel-inline-alloc">Cancel</button>
+      </div>
+    `;
+  })();
+
+  // Discipline chips with coverage classification
+  const chipsHtml = item.needs.length
+    ? item.needs.map((n) => {
+        const cls = classifyCoverage(n.department_id, n.percent_need);
+        const icon = cls === 'ok' ? '✓' : cls === 'tight' ? '⚠' : '✗';
+        const note = n.specialty_note ? ` (${escapeHtml(n.specialty_note)})` : '';
+        return `<span class="sc-chip ${cls}">${escapeHtml(getDeptName(n.department_id))}${note} ${Number(n.percent_need || 0).toFixed(0)}% ${icon}</span>`;
+      }).join('')
+    : '<span class="sc-chip">No discipline needs set</span>';
+
+  return `
+    <div class="sc-scope-block${outClass}">
+      <div class="sc-scope-head">
+        <div class="sc-scope-title">${escapeHtml(item.title)}${monthBadge}</div>
+        <div class="sc-scope-meta">
+          ${typeLabel}
+          · <a data-sc-action="edit-scope" data-id="${eid}">Edit</a>
+          · <a data-sc-action="remove-scope" data-id="${eid}">Remove</a>
+        </div>
+      </div>
+      ${item.description ? `<div class="sc-scope-desc">${escapeHtml(item.description)}${ownerLine}</div>` : (ownerLine ? `<div class="sc-scope-desc">${ownerLine.replace(/^ · /, '')}</div>` : '')}
+      <div class="sc-scope-disc">${chipsHtml}</div>
+      <div class="sc-scope-people">
+        <div class="sc-scope-people-list">${peopleHtml}${addPersonLink}</div>
+        ${inlineForm}
+      </div>
+    </div>
+  `;
+}
+
+function renderScopeForm(formState) {
+  const data = formState.data;
+  const eid = formState.editingId === 'new' ? 'new' : escapeHtml(formState.editingId);
+  const ownerOpts = '<option value="">— Owner —</option>' + (scopeCoverageState.ownerOptions || scopeCoverageState.employeeOptions)
+    .map((e) => `<option value="${escapeHtml(e.id)}"${e.id === data.owner_employee_id ? ' selected' : ''}>${escapeHtml(e.full_name)}</option>`).join('');
+
+  const needsRows = data.needs.map((n, idx) => {
+    const deptOpts = '<option value="">— Discipline —</option>' + scopeCoverageState.deptOptions
+      .map((d) => `<option value="${escapeHtml(d.id)}"${d.id === n.department_id ? ' selected' : ''}>${escapeHtml(scopeDeptLabel(d.name))}</option>`).join('');
+    return `
+      <div class="sc-need-row" data-need-idx="${idx}">
+        <select data-sc-need="department_id">${deptOpts}</select>
+        <input type="number" min="0" max="200" step="1" placeholder="%" value="${Number(n.percent_need || 0)}" data-sc-need="percent_need" style="width:60px" />
+        <input type="text" placeholder="Specialty note (optional)" value="${escapeHtml(n.specialty_note || '')}" data-sc-need="specialty_note" />
+        <button type="button" class="sc-btn danger" data-sc-action="remove-need" data-idx="${idx}">×</button>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="sc-scope-block sc-scope-form" data-form-id="${eid}">
+      <div class="sc-form-grid">
+        <input type="text" placeholder="Title (e.g. Monthly Content — 6 posts)" value="${escapeHtml(data.title || '')}" data-sc-field="title" />
+        <select data-sc-field="scope_type">
+          <option value="recurring"${data.scope_type === 'recurring' ? ' selected' : ''}>Retainer</option>
+          <option value="project"${data.scope_type === 'project' ? ' selected' : ''}>Project</option>
+        </select>
+        <select data-sc-field="owner_employee_id">${ownerOpts}</select>
+      </div>
+      <textarea placeholder="Short description" data-sc-field="description" rows="2">${escapeHtml(data.description || '')}</textarea>
+      <div class="sc-month-fields" style="display:flex;gap:8px;align-items:center;margin:4px 0;white-space:nowrap;">
+        <span style="font-size:11px;color:var(--muted);">Active:</span>
+        <input type="month" data-sc-field="start_month" value="${escapeHtml(data.start_month || '')}" style="height:26px;font-size:11px;padding:0 6px;width:140px;flex:0 0 auto;" />
+        <span style="color:var(--muted);font-size:11px;">→</span>
+        <input type="month" data-sc-field="end_month" value="${escapeHtml(data.end_month || '')}" style="height:26px;font-size:11px;padding:0 6px;width:140px;flex:0 0 auto;" />
+        <span style="font-size:10px;color:var(--muted);font-style:italic;">leave blank for retainer</span>
+      </div>
+      <div class="sc-needs-label">Disciplines required (set % per discipline):</div>
+      <div class="sc-needs-list">${needsRows || '<div class="sc-empty" style="padding:6px">No disciplines yet.</div>'}</div>
+      <button type="button" class="sc-btn" data-sc-action="add-need">+ Add discipline</button>
+      <div class="sc-form-actions">
+        <button type="button" class="sc-btn primary" data-sc-action="save-scope">Save</button>
+        <button type="button" class="sc-btn" data-sc-action="cancel-scope">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+function startNewScopeForm() {
+  scopeCoverageState.scopeFormState = {
+    editingId: 'new',
+    data: { title: '', scope_type: 'recurring', description: '', owner_employee_id: '', start_month: '', end_month: '', needs: [] }
+  };
+  renderScopeBlocks();
+}
+
+function startEditScopeForm(scopeItemId) {
+  const item = scopeCoverageState.scopeItems.find((i) => i.id === scopeItemId);
+  if (!item) return;
+  scopeCoverageState.scopeFormState = {
+    editingId: scopeItemId,
+    data: {
+      title: item.title || '',
+      scope_type: item.scope_type || 'recurring',
+      description: item.description || '',
+      owner_employee_id: item.owner_employee_id || '',
+      start_month: item.start_month ? String(item.start_month).slice(0, 7) : '',
+      end_month: item.end_month ? String(item.end_month).slice(0, 7) : '',
+      needs: item.needs.map((n) => ({
+        id: n.id,
+        department_id: n.department_id,
+        percent_need: Number(n.percent_need || 0),
+        specialty_note: n.specialty_note || ''
+      }))
+    }
+  };
+  renderScopeBlocks();
+}
+
+function readScopeFormFromDom() {
+  const formEl = document.querySelector('.sc-scope-form');
+  if (!formEl) return null;
+  const data = scopeCoverageState.scopeFormState?.data;
+  if (!data) return null;
+  data.title = formEl.querySelector('[data-sc-field="title"]').value.trim();
+  data.scope_type = formEl.querySelector('[data-sc-field="scope_type"]').value;
+  data.description = formEl.querySelector('[data-sc-field="description"]').value.trim();
+  data.owner_employee_id = formEl.querySelector('[data-sc-field="owner_employee_id"]').value || null;
+  data.start_month = formEl.querySelector('[data-sc-field="start_month"]')?.value || '';
+  data.end_month = formEl.querySelector('[data-sc-field="end_month"]')?.value || '';
+  const needsEls = formEl.querySelectorAll('.sc-need-row');
+  data.needs = Array.from(needsEls).map((row) => {
+    const idx = Number(row.dataset.needIdx);
+    const existing = data.needs[idx] || {};
+    return {
+      id: existing.id,
+      department_id: row.querySelector('[data-sc-need="department_id"]').value,
+      percent_need: Number(row.querySelector('[data-sc-need="percent_need"]').value || 0),
+      specialty_note: row.querySelector('[data-sc-need="specialty_note"]').value.trim()
+    };
+  });
+  return data;
+}
+
+async function saveScopeForm() {
+  const data = readScopeFormFromDom();
+  if (!data) return;
+  if (!data.title) { colonyAlert('Scope item needs a title.'); return; }
+
+  const formState = scopeCoverageState.scopeFormState;
+  const isNew = formState.editingId === 'new';
+  const filteredNeeds = data.needs.filter((n) => n.department_id);
+  const monthToFirstOfMonth = (s) => {
+    if (!s) return null;
+    const m = s.match(/^(\d{4})-(\d{1,2})/);
+    if (!m) return null;
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-01`;
+  };
+  const startMonth = monthToFirstOfMonth(data.start_month);
+  const endMonth = monthToFirstOfMonth(data.end_month);
+
+  try {
+    let scopeItemId;
+    if (isNew) {
+      const insRes = await state.supabase.from('client_scope_items').insert({
+        client_id: scopeCoverageState.clientId,
+        title: data.title,
+        scope_type: data.scope_type,
+        description: data.description || null,
+        owner_employee_id: data.owner_employee_id || null,
+        start_month: startMonth,
+        end_month: endMonth,
+        sort_order: scopeCoverageState.scopeItems.length
+      }).select().single();
+      if (insRes.error) throw insRes.error;
+      scopeItemId = insRes.data.id;
+    } else {
+      scopeItemId = formState.editingId;
+      const updRes = await state.supabase.from('client_scope_items').update({
+        title: data.title,
+        scope_type: data.scope_type,
+        description: data.description || null,
+        owner_employee_id: data.owner_employee_id || null,
+        start_month: startMonth,
+        end_month: endMonth
+      }).eq('id', scopeItemId);
+      if (updRes.error) throw updRes.error;
+
+      // Wipe existing needs (simpler than diffing)
+      const delRes = await state.supabase.from('client_scope_discipline_needs').delete().eq('scope_item_id', scopeItemId);
+      if (delRes.error) throw delRes.error;
+    }
+
+    if (filteredNeeds.length) {
+      const needsPayload = filteredNeeds.map((n) => ({
+        scope_item_id: scopeItemId,
+        department_id: n.department_id,
+        percent_need: Number(n.percent_need) || 0,
+        specialty_note: n.specialty_note || null
+      }));
+      const needsRes = await state.supabase.from('client_scope_discipline_needs').insert(needsPayload);
+      if (needsRes.error) throw needsRes.error;
+    }
+
+    scopeCoverageState.scopeFormState = null;
+    await loadScopeCoverageDataForClient(scopeCoverageState.clientId);
+    rerenderScopeCoverage();
+  } catch (err) {
+    console.error('Save scope item failed:', err);
+    colonyAlert('Save failed: ' + err.message);
+  }
+}
+
+async function removeScopeItem(scopeItemId) {
+  if (!await colonyConfirm('Remove this scope item? This cannot be undone.', { title: 'Remove scope item', confirmLabel: 'Remove', danger: true })) return;
+  try {
+    const res = await state.supabase.from('client_scope_items').delete().eq('id', scopeItemId);
+    if (res.error) throw res.error;
+    await loadScopeCoverageDataForClient(scopeCoverageState.clientId);
+    rerenderScopeCoverage();
+  } catch (err) {
+    console.error('Remove scope item failed:', err);
+    colonyAlert('Remove failed: ' + err.message);
+  }
+}
+
+// ── Allocation CRUD ────────────────────────────────────────────
+function renderAllocationRows() {
+  const container = document.getElementById('scAllocBody');
+  if (!container) { renderAvailableEmployees(); return; }
+  const vm = getCurrentViewMonth();
+  // Only show allocations active in the viewed month
+  const allocs = (scopeCoverageState.allocations || []).filter((a) => isAllocActiveInMonth(a, vm));
+
+  if (!allocs.length) {
+    container.innerHTML = '<div class="sc-empty" style="padding:8px 0">No one assigned this month.</div>';
+    renderAvailableEmployees();
+    return;
+  }
+
+  // Group by department
+  const byDept = new Map();
+  for (const a of allocs) {
+    const key = a.department_id || '—';
+    if (!byDept.has(key)) byDept.set(key, []);
+    byDept.get(key).push(a);
+  }
+
+  // Sort departments using the canonical discipline order
+  const deptOrder = scopeCoverageState.deptOptions.map((d) => d.id);
+  const sortedKeys = [...byDept.keys()].sort((a, b) => {
+    const ai = deptOrder.indexOf(a);
+    const bi = deptOrder.indexOf(b);
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  let html = '';
+  for (const deptId of sortedKeys) {
+    const rows = byDept.get(deptId);
+    const deptName = getDeptName(deptId);
+    const subtotal = rows.reduce((s, r) => s + Number(r.percent || 0), 0);
+    const peopleChips = rows.map((a) => {
+      const scope = a.scope_item_id
+        ? scopeCoverageState.scopeItems.find((s) => s.id === a.scope_item_id)
+        : null;
+      const scopeTag = scope ? ` · ${escapeHtml(scope.title || '')}` : '';
+      return `
+        <span class="sc-person-chip">
+          <b>${escapeHtml(getEmployeeName(a.employee_id))}</b>
+          <span class="sc-person-meta">${Number(a.percent || 0).toFixed(0)}%${scopeTag}</span>
+          ${canEditScopeCoverage() ? `<a class="sc-person-x" data-sc-action="remove-alloc" data-id="${escapeHtml(a.id)}" title="Remove">×</a>` : ''}
+        </span>
+      `;
+    }).join('');
+    html += `
+      <div class="sc-alloc-dept-group">
+        <div class="sc-alloc-dept-head">
+          <span class="sc-alloc-dept-name">${escapeHtml(deptName)}</span>
+          <span class="sc-alloc-dept-total">${subtotal.toFixed(0)}%</span>
+        </div>
+        <div class="sc-alloc-dept-list">${peopleChips}</div>
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+  renderAvailableEmployees();
+}
+
+function renderAvailableEmployees() {
+  const wrap = document.getElementById('scAvailableList');
+  if (!wrap) return;
+  const viewMonthForAssigned = getCurrentViewMonth();
+  const assignedHere = new Set(
+    scopeCoverageState.allocations
+      .filter((a) => isAllocActiveInMonth(a, viewMonthForAssigned))
+      .map((a) => a.employee_id)
+  );
+  const clientById = new Map((state.clients || []).map((c) => [String(c.id), c.name || 'Untitled']));
+
+  const sourceList = (scopeCoverageState.ownerOptions || scopeCoverageState.employeeOptions);
+  const month = getCurrentViewMonth();
+  const rows = sourceList.map((emp) => {
+    const allocs = scopeCoverageState.allAllocations.filter((a) => a.employee_id === emp.id && isAllocActiveInMonth(a, month));
+    const byClient = new Map();
+    let used = 0;
+    for (const a of allocs) {
+      const pct = Number(a.percent || 0);
+      used += pct;
+      const cname = clientById.get(String(a.client_id)) || 'Unknown';
+      byClient.set(cname, (byClient.get(cname) || 0) + pct);
+    }
+    return {
+      ...emp,
+      used: Math.round(used),
+      available: Math.max(0, 100 - Math.round(used)),
+      segments: [...byClient.entries()].sort((a, b) => b[1] - a[1])
+    };
+  }).sort((a, b) => a.used - b.used || a.full_name.localeCompare(b.full_name));
+
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="sc-empty" style="padding:10px 0">No employees loaded.</div>';
+    return;
+  }
+
+  const colorOf = (typeof window !== 'undefined' && window.getClientColor) ? window.getClientColor : (() => 'var(--primary)');
+
+  wrap.innerHTML = rows.map((e) => {
+    const segments = e.segments.map(([name, pct]) => {
+      const w = Math.round(pct);
+      if (w <= 0) return '';
+      return `<div class="sc-bar-seg" style="width:${w}%;background:${colorOf(name)}" title="${escapeHtml(name)} ${w}%"></div>`;
+    }).join('');
+    const labels = e.segments.map(([name, pct]) =>
+      `<span class="sc-client-label"><span class="sc-client-dot" style="background:${colorOf(name)}"></span>${escapeHtml(name)} ${Math.round(pct)}%</span>`
+    ).join('');
+    const isOnThisClient = assignedHere.has(e.id);
+    const showAssign = e.available > 0 && !isOnThisClient;
+    const rightSide = showAssign
+      ? `<button class="sc-btn primary" type="button" data-sc-action="assign-emp" data-id="${escapeHtml(e.id)}">Assign</button>`
+      : isOnThisClient
+        ? `<span class="sc-avail-state on">On this client</span>`
+        : `<span class="sc-avail-state full">Fully booked</span>`;
+    const freeCls = e.available <= 0 ? 'full' : e.available < 20 ? 'tight' : 'ok';
+    return `
+      <div class="sc-avail-row">
+        <div class="sc-avail-name"><b>${escapeHtml(e.full_name)}</b><span class="sc-avail-dept">${escapeHtml(scopeDeptLabel(e.department_name))}</span></div>
+        <div class="sc-avail-stack">
+          <div class="sc-stack-bar">${segments}</div>
+          <div class="sc-stack-labels">${labels || '<span class="sc-client-label muted">Idle</span>'}</div>
+        </div>
+        <div class="sc-avail-pct ${freeCls}">${e.available}% free</div>
+        <div class="sc-avail-action">${rightSide}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function startAssignAllocForm(employeeId) {
+  // Always resolve through the directory so we get the real department id.
+  const dirEmp = (state.employeeDirectory || []).find((e) => e.id === employeeId);
+  const emp = dirEmp
+    ? { id: dirEmp.id, full_name: dirEmp.full_name, department_id: dirEmp.department?.id || '' }
+    : (scopeCoverageState.ownerOptions || scopeCoverageState.employeeOptions).find((e) => e.id === employeeId);
+  if (!emp) return;
+  // Auto-pick scope if exactly one is active in the viewed month
+  const month = getCurrentViewMonth();
+  const active = (scopeCoverageState.scopeItems || []).filter((s) => s.is_active !== false && isItemActiveInMonth(s, month));
+  const scopeId = active.length === 1 ? active[0].id : '';
+  scopeCoverageState.allocFormState = {
+    editingId: 'new',
+    data: {
+      employee_id: emp.id,
+      department_id: emp.department_id || emp.department?.id || '',
+      percent: '',
+      scope_item_id: scopeId
+    }
+  };
+  renderAllocationRows();
+  // Scroll the form into view
+  setTimeout(() => {
+    const row = document.querySelector('.sc-alloc-form-row');
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 50);
+}
+
+function renderAllocRow(alloc) {
+  const eid = escapeHtml(alloc.id);
+  const totalUtil = getEmployeeTotalUtil(alloc.employee_id);
+  const barCls = totalUtil >= 100 ? 'red' : totalUtil >= 85 ? 'amber' : '';
+  const barWidth = Math.min(100, totalUtil);
+  let pillCls = 'ok';
+  let pillLabel = 'OK';
+  if (totalUtil >= 100) { pillCls = 'tight'; pillLabel = 'Maxed'; }
+  else if (Number(alloc.percent || 0) === 0) { pillCls = 'gap'; pillLabel = 'Underfilled'; }
+
+  const scope = alloc.scope_item_id
+    ? scopeCoverageState.scopeItems.find((s) => s.id === alloc.scope_item_id)
+    : null;
+  const scopeLabel = scope
+    ? escapeHtml(scope.title || '')
+    : '<span style="color:var(--text-muted,#8b95a8)">—</span>';
+  return `
+    <tr>
+      <td><b>${escapeHtml(getEmployeeName(alloc.employee_id))}</b></td>
+      <td>${escapeHtml(getDeptName(alloc.department_id))}</td>
+      <td style="font-size:12px">${scopeLabel}</td>
+      <td>${Number(alloc.percent || 0).toFixed(0)}%</td>
+      <td><div class="sc-bar ${barCls}"><span style="width:${barWidth}%"></span></div> <span style="font-size:11px;color:var(--text-muted,#8b95a8)">${totalUtil.toFixed(0)}%</span></td>
+      <td><span class="sc-pill ${pillCls}">${pillLabel}</span></td>
+      <td>
+        <button class="sc-btn" type="button" data-sc-action="edit-alloc" data-id="${eid}">Edit</button>
+        <button class="sc-btn danger" type="button" data-sc-action="remove-alloc" data-id="${eid}">×</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderAllocFormRow(formState) {
+  const data = formState.data;
+  // Filter out employees already on this client unless we're editing them
+  const usedKeys = new Set(scopeCoverageState.allocations
+    .filter((a) => formState.editingId === 'new' || a.id !== formState.editingId)
+    .map((a) => `${a.employee_id}::${a.department_id}`));
+
+  // Build full employee list from directory (so people like the AM lead outside
+  // the 5-discipline shortlist still appear).
+  const empSource = (state.employeeDirectory || [])
+    .filter((e) => e.is_active !== false)
+    .map((e) => ({ id: e.id, full_name: e.full_name, department_id: e.department?.id || '' }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const empOpts = '<option value="">— Person —</option>' + empSource
+    .map((e) => `<option value="${escapeHtml(e.id)}" data-dept-id="${escapeHtml(e.department_id)}"${e.id === data.employee_id ? ' selected' : ''}>${escapeHtml(e.full_name)}</option>`).join('');
+  const currentDeptLabel = data.department_id ? getDeptName(data.department_id) : '—';
+
+  return `
+    <tr class="sc-alloc-form-row">
+      <td><select data-sc-alloc="employee_id" onchange="(function(s){var o=s.options[s.selectedIndex];var did=o&&o.getAttribute('data-dept-id')||'';var row=s.closest('tr');row.querySelector('[data-sc-alloc=&quot;department_id&quot;]').value=did;row.querySelector('[data-sc-dept-label]').textContent=did?window.getDeptName(did):'—';})(this)">${empOpts}</select></td>
+      <td><span data-sc-dept-label style="color:var(--text-muted,#8b95a8)">${escapeHtml(currentDeptLabel)}</span><input type="hidden" data-sc-alloc="department_id" value="${escapeHtml(data.department_id || '')}" /></td>
+      <td><select data-sc-alloc="scope_item_id" style="width:100%"><option value="">Select</option>${(scopeCoverageState.scopeItems || []).map((it) => `<option value="${escapeHtml(it.id)}"${(data.scope_item_id || '') === it.id ? ' selected' : ''}>${escapeHtml(it.title || '')}</option>`).join('')}</select></td>
+      <td><input type="number" min="0" max="200" step="1" value="${data.percent === '' || data.percent == null ? '' : Number(data.percent)}" placeholder="0" data-sc-alloc="percent" style="width:70px" />%</td>
+      <td></td>
+      <td></td>
+      <td><div class="sc-alloc-actions"><button class="sc-btn primary" type="button" data-sc-action="save-alloc">Save</button><button class="sc-btn" type="button" data-sc-action="cancel-alloc">Cancel</button></div></td>
+    </tr>
+  `;
+}
+
+function startNewAllocForm(prefillScopeItemId) {
+  // If not provided, auto-pick when exactly one scope is active in viewMonth.
+  let scopeId = prefillScopeItemId || '';
+  if (!scopeId) {
+    const month = getCurrentViewMonth();
+    const active = (scopeCoverageState.scopeItems || []).filter((s) => s.is_active !== false && isItemActiveInMonth(s, month));
+    if (active.length === 1) scopeId = active[0].id;
+  }
+  scopeCoverageState.allocFormState = {
+    editingId: 'new',
+    data: { employee_id: '', department_id: '', percent: 0, scope_item_id: scopeId }
+  };
+  renderAllocationRows();
+}
+
+function startEditAllocForm(allocId) {
+  const alloc = scopeCoverageState.allocations.find((a) => a.id === allocId);
+  if (!alloc) return;
+  scopeCoverageState.allocFormState = {
+    editingId: allocId,
+    data: {
+      employee_id: alloc.employee_id,
+      department_id: alloc.department_id,
+      percent: Number(alloc.percent || 0),
+      scope_item_id: alloc.scope_item_id || ''
+    }
+  };
+  renderAllocationRows();
+}
+
+function readAllocFormFromDom() {
+  const row = document.querySelector('.sc-alloc-form-row');
+  if (!row) return null;
+  return {
+    employee_id: row.querySelector('[data-sc-alloc="employee_id"]').value,
+    department_id: row.querySelector('[data-sc-alloc="department_id"]').value,
+    percent: Number(row.querySelector('[data-sc-alloc="percent"]').value || 0),
+    scope_item_id: row.querySelector('[data-sc-alloc="scope_item_id"]').value || null
+  };
+}
+
+async function saveAllocForm() {
+  const data = readAllocFormFromDom();
+  if (!data) return;
+  if (!data.employee_id || !data.department_id) { colonyAlert('Pick a person and discipline.'); return; }
+
+  const formState = scopeCoverageState.allocFormState;
+  const isNew = formState.editingId === 'new';
+
+  try {
+    if (isNew) {
+      const scopeTitle = data.scope_item_id
+        ? (scopeCoverageState.scopeItems.find((s) => s.id === data.scope_item_id)?.title || null)
+        : null;
+      const insRes = await state.supabase.from('client_standing_allocations').insert({
+        client_id: scopeCoverageState.clientId,
+        employee_id: data.employee_id,
+        department_id: data.department_id,
+        percent: data.percent,
+        scope_item_id: data.scope_item_id || null,
+        notes: scopeTitle
+      });
+      if (insRes.error) throw insRes.error;
+    } else {
+      const scopeTitle = data.scope_item_id
+        ? (scopeCoverageState.scopeItems.find((s) => s.id === data.scope_item_id)?.title || null)
+        : null;
+      const updRes = await state.supabase.from('client_standing_allocations').update({
+        employee_id: data.employee_id,
+        department_id: data.department_id,
+        percent: data.percent,
+        scope_item_id: data.scope_item_id || null,
+        notes: scopeTitle
+      }).eq('id', formState.editingId);
+      if (updRes.error) throw updRes.error;
+    }
+
+    scopeCoverageState.allocFormState = null;
+    await loadScopeCoverageDataForClient(scopeCoverageState.clientId);
+    rerenderScopeCoverage();
+  } catch (err) {
+    console.error('Save allocation failed:', err);
+    colonyAlert('Save failed: ' + err.message);
+  }
+}
+
+async function removeAllocation(allocId) {
+  if (!await colonyConfirm('Remove this person from this client?')) return;
+  try {
+    const res = await state.supabase.from('client_standing_allocations').delete().eq('id', allocId);
+    if (res.error) throw res.error;
+    await loadScopeCoverageDataForClient(scopeCoverageState.clientId);
+    rerenderScopeCoverage();
+  } catch (err) {
+    console.error('Remove allocation failed:', err);
+    colonyAlert('Remove failed: ' + err.message);
+  }
+}
+
+// ── Click delegation for the whole screen ─────────────────────
+(function wireScopeCoverageClicks() {
+  document.addEventListener('click', (event) => {
+    const screen = document.getElementById('client-scope-coverage');
+    if (!screen) return;
+    // Only act if the click actually originated inside this screen.
+    if (!screen.contains(event.target)) return;
+
+    // Top-level buttons
+    if (event.target.closest('#scAddScopeBtn')) { startNewScopeForm(); return; }
+    if (event.target.closest('#scAddAllocBtn')) { startNewAllocForm(); return; }
+
+    // Action delegation
+    const actionEl = event.target.closest('[data-sc-action]');
+    if (!actionEl) return;
+    const action = actionEl.dataset.scAction;
+    const id = actionEl.dataset.id;
+    const idx = actionEl.dataset.idx;
+
+    if (action === 'edit-scope') { startEditScopeForm(id); return; }
+    if (action === 'remove-scope') { removeScopeItem(id); return; }
+    if (action === 'cancel-scope') { scopeCoverageState.scopeFormState = null; renderScopeBlocks(); return; }
+    if (action === 'save-scope') { saveScopeForm(); return; }
+    if (action === 'add-need') {
+      const data = readScopeFormFromDom();
+      if (data) { data.needs.push({ department_id: '', percent_need: 0, specialty_note: '' }); renderScopeBlocks(); }
+      return;
+    }
+    if (action === 'remove-need') {
+      const data = readScopeFormFromDom();
+      if (data) { data.needs.splice(Number(idx), 1); renderScopeBlocks(); }
+      return;
+    }
+
+    if (action === 'assign-emp') { startAssignAllocForm(id); return; }
+    if (action === 'add-person-to-scope') {
+      scopeCoverageState.allocFormState = {
+        editingId: 'new',
+        data: { employee_id: '', department_id: '', percent: '', scope_item_id: id }
+      };
+      renderScopeBlocks();
+      setTimeout(() => {
+        const f = document.querySelector(`[data-scope-inline="${id}"]`);
+        if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 30);
+      return;
+    }
+    if (action === 'cancel-inline-alloc') {
+      scopeCoverageState.allocFormState = null;
+      renderScopeBlocks();
+      return;
+    }
+    if (action === 'save-inline-alloc') {
+      const f = document.querySelector(`[data-scope-inline="${id}"]`);
+      if (!f) return;
+      const employeeId = f.querySelector('[data-inline-alloc="employee_id"]').value;
+      const departmentId = f.querySelector('[data-inline-alloc="department_id"]').value;
+      const percent = Number(f.querySelector('[data-inline-alloc="percent"]').value || 0);
+      if (!employeeId || !departmentId) { colonyAlert('Pick a person.'); return; }
+      (async () => {
+        try {
+          const scopeTitle = scopeCoverageState.scopeItems.find((s) => s.id === id)?.title || null;
+          const res = await state.supabase.from('client_standing_allocations').insert({
+            client_id: scopeCoverageState.clientId,
+            employee_id: employeeId,
+            department_id: departmentId,
+            percent,
+            scope_item_id: id,
+            notes: scopeTitle
+          });
+          if (res.error) throw res.error;
+          scopeCoverageState.allocFormState = null;
+          await loadScopeCoverageDataForClient(scopeCoverageState.clientId);
+          rerenderScopeCoverage();
+        } catch (err) {
+          console.error('Inline alloc save failed:', err);
+          colonyAlert('Save failed: ' + err.message);
+        }
+      })();
+      return;
+    }
+    if (action === 'edit-alloc') { startEditAllocForm(id); return; }
+    if (action === 'remove-alloc') { removeAllocation(id); return; }
+    if (action === 'cancel-alloc') { scopeCoverageState.allocFormState = null; renderAllocationRows(); return; }
+    if (action === 'save-alloc') { saveAllocForm(); return; }
+  });
+})();
+
 async function renderClientAnalyticsTab(clientId) {
   const overviewPanel = document.getElementById('analyticsTabOverview');
   const audiencePanel = document.getElementById('analyticsTabAudience');
@@ -8598,14 +10827,14 @@ async function renderClientAnalyticsTab(clientId) {
 
   // Show upload button for AMs / leadership / admin
   if (analyticsUploadInline) {
-    analyticsUploadInline.style.display = canAddClients() ? '' : 'none';
+    analyticsUploadInline.style.display = canUploadAnalytics() ? '' : 'none';
   }
 
   overviewPanel.innerHTML = '<p class="mini-meta" style="padding:var(--space-4)">Loading analytics...</p>';
 
   const { data: reports, error } = await state.supabase
     .from('client_analytics')
-    .select('id, report_type, report_label, file_name, uploaded_at, metrics_data, posts_data, summary, demographics_data, visitor_metrics, uploaded_by, insights_cache')
+    .select('id, report_type, report_label, file_name, uploaded_at, data_through, metrics_data, posts_data, summary, demographics_data, visitor_metrics, uploaded_by, insights_cache')
     .eq('client_id', clientId)
     .order('uploaded_at', { ascending: false });
 
@@ -8624,16 +10853,23 @@ async function renderClientAnalyticsTab(clientId) {
   const contentReport = grouped.content || null;
   const followersReport = grouped.followers || null;
   const visitorsReport = grouped.visitors || null;
+  const instagramReport = grouped.instagram || null;
+  const instagramAudienceReport = grouped.instagram_audience || null;
 
-  // Show "Data uploaded until" date in header meta
+  // Header meta shows DATA coverage, not upload-click time — uploaded_at lies
+  // both ways (frozen stamps under fresh data: Helix Labs; fresh re-upload of an
+  // old file). data_through comes from the report contents; uploaded_at is
+  // only a fallback for rows that predate the column.
   if (metaEl) {
-    const allUploads = (reports || []).map(r => r.uploaded_at).filter(Boolean).sort();
-    const latestUpload = allUploads.length ? new Date(allUploads[allUploads.length - 1]) : null;
-    if (latestUpload && !isNaN(latestUpload)) {
-      const dd = String(latestUpload.getDate()).padStart(2, '0');
-      const mm = String(latestUpload.getMonth() + 1).padStart(2, '0');
-      const yy = String(latestUpload.getFullYear()).slice(-2);
-      metaEl.innerHTML = `Data uploaded until:<br>${dd}/${mm}/${yy}`;
+    const allCoverage = (reports || [])
+      .map(r => r.data_through || String(r.uploaded_at || '').slice(0, 10))
+      .filter(Boolean).sort();
+    const latest = allCoverage.length ? new Date(allCoverage[allCoverage.length - 1] + 'T00:00:00') : null;
+    if (latest && !isNaN(latest)) {
+      const dd = String(latest.getDate()).padStart(2, '0');
+      const mm = String(latest.getMonth() + 1).padStart(2, '0');
+      const yy = String(latest.getFullYear()).slice(-2);
+      metaEl.innerHTML = `Data through:<br>${dd}/${mm}/${yy}`;
     } else {
       metaEl.textContent = '';
     }
@@ -8642,17 +10878,48 @@ async function renderClientAnalyticsTab(clientId) {
   // Store content report as current for insights
   window._analyticsCurrentReport = contentReport;
 
-  if (!contentReport && !followersReport && !visitorsReport) {
+  const instagramPanel = document.getElementById('analyticsTabInstagram');
+  const communityReport = grouped.community_pulse || null;
+  const communityPanel = document.getElementById('analyticsTabCommunity');
+  const liOverviewSection = document.getElementById('liOverviewSection');
+
+  // Platform tabs exist only when that platform has data; opening a
+  // different client always starts back on the cross-platform Overview.
+  const hasLinkedIn = Boolean(contentReport || followersReport || visitorsReport);
+  const tabBar = document.getElementById('analyticsInnerTabs');
+  const setTabVisible = (key, show) => {
+    const b = tabBar?.querySelector(`[data-analytics-tab="${key}"]`);
+    if (b) b.style.display = show ? '' : 'none';
+  };
+  setTabVisible('linkedin', hasLinkedIn);
+  setTabVisible('instagram', Boolean(instagramReport));
+  setTabVisible('community', Boolean(communityReport));
+  wireAnalyticsInnerTabs();
+  if (renderClientAnalyticsTab._lastClient !== clientId) {
+    renderClientAnalyticsTab._lastClient = clientId;
+    activateAnalyticsTab('overview');
+  } else {
+    const activeBtn = tabBar?.querySelector('.analytics-inner-tab.active');
+    if (activeBtn && activeBtn.style.display === 'none') activateAnalyticsTab('overview');
+  }
+
+  if (!contentReport && !followersReport && !visitorsReport && !instagramReport && !communityReport) {
     overviewPanel.innerHTML = `
       <div class="analytics-empty">
         <div class="analytics-empty-icon">📊</div>
         <p>No analytics reports uploaded yet.</p>
-        ${canAddClients() ? '<p class="mini-meta">Upload LinkedIn analytics exports to see data.</p>' : ''}
+        ${canUploadAnalytics() ? '<p class="mini-meta">Upload LinkedIn (Content/Followers/Visitors) or Instagram (Meta) exports, or the community comms workbook, to see data.</p>' : ''}
       </div>`;
+    if (liOverviewSection) liOverviewSection.innerHTML = '';
     if (audiencePanel) audiencePanel.innerHTML = '';
     if (postsPanel) postsPanel.innerHTML = '';
+    if (instagramPanel) instagramPanel.innerHTML = '';
+    if (communityPanel) communityPanel.innerHTML = '';
     return;
   }
+
+  // Cross-platform snapshot (the Overview tab's whole content)
+  renderAnalyticsSnapshot(grouped);
 
   // Render Overview tab
   destroyAnalyticsCharts();
@@ -8664,12 +10931,44 @@ async function renderClientAnalyticsTab(clientId) {
   // Render Post Performance tab
   renderAnalyticsPostPerformance(contentReport);
 
+  // Render Instagram tab (Summary + Posts; Audience section appears when an
+  // 'instagram_audience' report has been uploaded)
+  renderAnalyticsInstagram(instagramReport, instagramAudienceReport);
+
+  // Render Community Pulse tab (newsletter/dispatch/survey sends + community)
+  renderAnalyticsCommunity(communityReport);
+
   // Wire inner tab switching
   wireAnalyticsInnerTabs();
 }
 
 // --- Inner Tab Switching ---
 let _analyticsInnerTabsWired = false;
+function activateAnalyticsTab(key) {
+  const tabBar = document.getElementById('analyticsInnerTabs');
+  if (!tabBar) return;
+  const btn = tabBar.querySelector(`[data-analytics-tab="${key}"]`);
+  if (!btn) return;
+  tabBar.querySelectorAll('.analytics-inner-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#client-analytics > .analytics-tab-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(
+    key === 'overview' ? 'analyticsTabOverview' :
+    key === 'linkedin' ? 'analyticsTabLinkedIn' :
+    key === 'instagram' ? 'analyticsTabInstagram' :
+    'analyticsTabCommunity'
+  );
+  if (!panel) return;
+  panel.classList.add('active');
+  // Charts created while their panel was display:none have zero height
+  // (Chart.js only sizes on visible canvases) — deferred builders run on
+  // first show of their tab.
+  if (panel.dataset.chartsPending) {
+    if (panel.id === 'analyticsTabInstagram') requestAnimationFrame(() => buildIgMetricCharts());
+    if (panel.id === 'analyticsTabLinkedIn') requestAnimationFrame(() => buildLinkedInCharts());
+  }
+}
+
 function wireAnalyticsInnerTabs() {
   if (_analyticsInnerTabsWired) return;
   const tabBar = document.getElementById('analyticsInnerTabs');
@@ -8679,62 +10978,126 @@ function wireAnalyticsInnerTabs() {
     const tab = e.target.closest('.analytics-inner-tab');
     if (!tab) return;
     e.preventDefault();
-    tabBar.querySelectorAll('.analytics-inner-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    document.querySelectorAll('#client-analytics > .analytics-tab-panel').forEach(p => p.classList.remove('active'));
-    const panel = document.getElementById(
-      tab.dataset.analyticsTab === 'overview' ? 'analyticsTabOverview' :
-      tab.dataset.analyticsTab === 'audience' ? 'analyticsTabAudience' : 'analyticsTabPosts'
-    );
-    if (panel) panel.classList.add('active');
+    activateAnalyticsTab(tab.dataset.analyticsTab);
   });
 }
 
 // --- Overview Tab ---
-function renderAnalyticsOverview(contentReport, followersReport, visitorsReport) {
+// ── Cross-platform snapshot: the Overview tab ──
+// One compact card per platform with data — headline numbers, WoW deltas,
+// data freshness (data_through), and a jump into the platform tab. Depth
+// lives in the platform tabs; this answers "what's happening, everywhere?".
+function renderAnalyticsSnapshot(grouped) {
   const panel = document.getElementById('analyticsTabOverview');
+  if (!panel) return;
+  const fmt = (n) => fmtAnalytics(Number(n) || 0);
+
+  const freshChip = (isoDate) => {
+    if (!isoDate) return '<span class="chip pending">no coverage date</span>';
+    const d = new Date(String(isoDate).slice(0, 10) + 'T00:00:00');
+    if (isNaN(d)) return '';
+    const days = Math.floor((new Date() - d) / 86400000);
+    const label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    return days > 21
+      ? `<span class="chip warn">⚠ data through ${label} · ${Math.floor(days / 7)} weeks old</span>`
+      : `<span class="chip approved">data through ${label}</span>`;
+  };
+  const maxThrough = (...reports) => reports
+    .map(r => r?.data_through || '').filter(Boolean).sort().pop() || null;
+  const kpiCell = (label, value, arrow) =>
+    `<div class="snap-kpi"><span class="snap-kpi-label">${escapeHtml(label)}</span><span class="snap-kpi-value">${value}${arrow || ''}</span></div>`;
+  const card = (title, tabKey, freshIso, kpisHtml, note) => `
+    <div class="panel snap-card">
+      <div class="snap-card-head">
+        <h3>${escapeHtml(title)}</h3>
+        ${freshChip(freshIso)}
+      </div>
+      <div class="snap-kpis">${kpisHtml}</div>
+      ${note ? `<p class="mini-meta">${note}</p>` : ''}
+    </div>`;
+
+  const cards = [];
+
+  // LinkedIn — reuse the tested week-on-week KPI math
+  const cr = grouped.content, fr = grouped.followers, vr = grouped.visitors;
+  if (cr || fr || vr) {
+    const { kpis, kpiPeriod } = computeOverviewKpis(cr, fr, vr);
+    cards.push(card('LinkedIn', 'linkedin', maxThrough(cr, fr, vr),
+      kpis.map(k => kpiCell(k.label, k.value, k.arrow)).join(''), escapeHtml(kpiPeriod)));
+  }
+
+  // Instagram — WoW from daily metrics when present, else post-export totals
+  const ig = grouped.instagram;
+  if (ig) {
+    const daily = Array.isArray(ig.metrics_data) ? ig.metrics_data : [];
+    const igKpis = [];
+    if (daily.length >= 14) {
+      const wow = (key) => {
+        const recent = daily.slice(-7).reduce((s, r) => s + (Number(r[key]) || 0), 0);
+        const prev = daily.slice(-14, -7).reduce((s, r) => s + (Number(r[key]) || 0), 0);
+        return { recent, arrow: trendArrow(recent, prev) };
+      };
+      [['views', 'Views'], ['reach', 'Reach'], ['content_interactions', 'Interactions'], ['follows', 'Follows']].forEach(([key, label]) => {
+        if (daily.some(r => r[key] !== undefined)) {
+          const w = wow(key);
+          igKpis.push(kpiCell(label, fmt(w.recent), w.arrow));
+        }
+      });
+    }
+    if (!igKpis.length && ig.summary) {
+      igKpis.push(kpiCell('Posts', fmt(ig.summary.total_posts)));
+      igKpis.push(kpiCell('Views', fmt(ig.summary.total_views)));
+      igKpis.push(kpiCell('Eng. rate', `${ig.summary.avg_engagement || '0.00'}%`));
+    }
+    cards.push(card('Instagram', 'instagram', ig.data_through,
+      igKpis.join('') || '<p class="mini-meta">Data uploaded — open the tab for details.</p>',
+      daily.length >= 14 ? 'Last 7 days · vs previous 7' : ''));
+  }
+
+  // Community Pulse — base size + the latest send's performance
+  const cp = grouped.community_pulse;
+  if (cp) {
+    const s = cp.summary || {};
+    const lastSend = (cp.metrics_data || [])[ (cp.metrics_data || []).length - 1 ];
+    const cpKpis = [
+      kpiCell('Subscribers', fmt(s.subscribers)),
+      kpiCell('Forum', fmt(s.forum_members)),
+      lastSend ? kpiCell('Last send open', `${((lastSend.open_rate || 0) * 100).toFixed(1)}%`) : '',
+      lastSend ? kpiCell('Last send click', `${((lastSend.click_rate || 0) * 100).toFixed(1)}%`) : ''
+    ].join('');
+    cards.push(card('Community Pulse', 'community', cp.data_through, cpKpis,
+      lastSend ? `Latest: ${escapeHtml(lastSend.name || '')} (${escapeHtml(lastSend.send_type || 'send')})` : ''));
+  }
+
+  panel.innerHTML = `<div class="snap-grid">${cards.join('')}</div>`;
+}
+
+function renderAnalyticsOverview(contentReport, followersReport, visitorsReport) {
+  const panel = document.getElementById('liOverviewSection');
   if (!panel) return;
 
   const weekly = contentReport?.metrics_data || [];
-  const posts = contentReport?.posts_data || [];
   const followerDaily = followersReport?.metrics_data || [];
-  const visitorDaily = visitorsReport?.visitor_metrics || [];
   const followerDemo = followersReport?.demographics_data || {};
 
-  // KPI cards — last week vs previous week (week-on-week)
-  const latestWeek = weekly.length ? weekly[weekly.length - 1] : null;
-  const prevWeek = weekly.length > 1 ? weekly[weekly.length - 2] : null;
-
-  const lastWeekImpressions = latestWeek ? Math.round(latestWeek['Impressions (organic)'] || 0) : 0;
-  const lastWeekEngRate = latestWeek ? (latestWeek['Engagement rate (total)'] || 0) : 0;
-
-  // Followers — last 7 days vs previous 7 days
-  const fLen = followerDaily.length;
-  const fRecent = fLen >= 7 ? followerDaily.slice(-7).reduce((s, d) => s + (d.total || 0), 0) : 0;
-  const fPrev = fLen >= 14 ? followerDaily.slice(-14, -7).reduce((s, d) => s + (d.total || 0), 0) : 0;
-
-  // Visitors — last 7 days vs previous 7 days
-  const vLen = visitorDaily.length;
-  const vRecent = vLen >= 7 ? visitorDaily.slice(-7).reduce((s, d) => s + (d.overview_unique || 0), 0) : 0;
-  const vPrev = vLen >= 14 ? visitorDaily.slice(-14, -7).reduce((s, d) => s + (d.overview_unique || 0), 0) : 0;
-
-  const kpis = [
-    { label: 'Impressions', value: fmtAnalytics(lastWeekImpressions), arrow: prevWeek ? trendArrow(lastWeekImpressions, prevWeek['Impressions (organic)'] || 0) : '' },
-    { label: 'Engagement Rate', value: pctAnalytics(lastWeekEngRate), arrow: prevWeek ? trendArrow(lastWeekEngRate, prevWeek['Engagement rate (total)'] || 0) : '' },
-    { label: 'New Followers', value: fRecent > 0 ? `+${fmtAnalytics(fRecent)}` : '–', arrow: fLen >= 14 ? trendArrow(fRecent, fPrev) : '' },
-    { label: 'Page Visits', value: vRecent > 0 ? fmtAnalytics(vRecent) : '–', arrow: vLen >= 14 ? trendArrow(vRecent, vPrev) : '' },
-  ];
-
-  const kpiPeriod = latestWeek?.week ? `Week of ${weekLabelAnalytics(latestWeek.week)}` : 'Last week';
-  const kpiHtml = `<div class="analytics-kpi-period">${kpiPeriod}${prevWeek ? ' · vs previous week' : ''}</div>
+  // KPI math is pure and lives in js/analytics.js (computeOverviewKpis, tested)
+  const { kpis, kpiPeriod, hasPrevWeek } = computeOverviewKpis(contentReport, followersReport, visitorsReport);
+  const kpiHtml = `<div class="analytics-kpi-period">${kpiPeriod}${hasPrevWeek ? ' · vs previous week' : ''}</div>
   <div class="analytics-overview-kpi">${kpis.map(k => `
     <div class="analytics-kpi-card">
       <div class="analytics-kpi-label">${k.label}</div>
       <div class="analytics-kpi-value">${k.value}${k.arrow || ''}</div>
     </div>`).join('')}</div>`;
 
-  // AI Brand Signal banner
-  const brandSignalHtml = buildInsightsBanner('brand-signal', 'Week-on-week brand signal analysis');
+  // AI insight banners — brand signal + the weekly/monthly analyses (the API
+  // slices its own windows: last 4 weeks / last 3 months of content data)
+  let brandSignalHtml = buildInsightsBanner('brand-signal', 'Week-on-week brand signal analysis', 'Brand signal');
+  if (weekly.length) {
+    brandSignalHtml += buildInsightsBanner('weekly', 'Last 4 weeks — tactical pulse', 'Weekly pulse');
+  }
+  if (weekly.length >= 5) {
+    brandSignalHtml += buildInsightsBanner('monthly', 'Last 3 months — trend analysis', 'Monthly trend');
+  }
 
   // Charts placeholder canvases
   const chartsHtml = `<div class="analytics-charts-row">
@@ -8760,10 +11123,29 @@ function renderAnalyticsOverview(contentReport, followersReport, visitorsReport)
 
   panel.innerHTML = kpiHtml + brandSignalHtml + chartsHtml;
 
-  // Render Chart.js charts
+  // LinkedIn now lives in a non-default tab — hidden canvases stay 0-height
+  // in the vendored Chart.js, so defer chart creation to tab-show (same
+  // pattern as the Instagram trend charts).
+  window._liChartData = { weekly, followerDaily };
+  const liPanel = document.getElementById('analyticsTabLinkedIn');
   if (typeof Chart !== 'undefined') {
-    renderOverviewCharts(weekly, followerDaily);
+    if (liPanel && liPanel.classList.contains('active')) {
+      renderOverviewCharts(weekly, followerDaily);
+    } else if (liPanel) {
+      liPanel.dataset.chartsPending = '1';
+    }
   }
+}
+
+// Deferred LinkedIn chart builder — consumed by the tab-switch handler.
+function buildLinkedInCharts() {
+  const liPanel = document.getElementById('analyticsTabLinkedIn');
+  if (!liPanel || typeof Chart === 'undefined') return;
+  delete liPanel.dataset.chartsPending;
+  const d = window._liChartData;
+  if (d) renderOverviewCharts(d.weekly, d.followerDaily);
+  const posts = window._liPostsForChart;
+  if (posts && posts.length) renderContentTypeChart(posts);
 }
 
 function getChartThemeColors() {
@@ -8913,28 +11295,33 @@ function buildAudienceQualitySnapshot(demographics) {
     return '<p class="mini-meta">Upload a Followers report to see audience quality.</p>';
   }
 
+  const persona = currentAnalyticsPersona();
+  if (!persona) {
+    return '<p class="mini-meta">No target persona defined for this client yet.</p>';
+  }
+
   const industryTotal = demographics.industry.reduce((s, d) => s + d.count, 0) || 1;
   const targetIndustryCount = demographics.industry
-    .filter(d => ANALYTICS_TARGET_INDUSTRIES.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
+    .filter(d => persona.industries.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
     .reduce((s, d) => s + d.count, 0);
   const targetIndustryPct = ((targetIndustryCount / industryTotal) * 100).toFixed(1);
 
   const seniorityTotal = demographics.seniority?.reduce((s, d) => s + d.count, 0) || 1;
   const dmCount = (demographics.seniority || [])
-    .filter(d => ANALYTICS_DECISION_MAKER_SENIORITY.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
+    .filter(d => persona.decisionMakerSeniority.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
     .reduce((s, d) => s + d.count, 0);
   const dmPct = ((dmCount / seniorityTotal) * 100).toFixed(1);
 
   const jfTotal = demographics.job_function?.reduce((s, d) => s + d.count, 0) || 1;
   const targetJfCount = (demographics.job_function || [])
-    .filter(d => ANALYTICS_TARGET_JOB_FUNCTIONS.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
+    .filter(d => persona.jobFunctions.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
     .reduce((s, d) => s + d.count, 0);
   const targetJfPct = ((targetJfCount / jfTotal) * 100).toFixed(1);
 
   const metrics = [
-    { label: 'Target Industries', pct: targetIndustryPct, desc: 'Pharma, Biotech, Chemical, Research' },
-    { label: 'Decision-Makers', pct: dmPct, desc: 'Manager – CXO' },
-    { label: 'Target Job Functions', pct: targetJfPct, desc: 'Research, Engineering, BizDev' }
+    { label: 'Target Industries', pct: targetIndustryPct, desc: persona.industriesLabel },
+    { label: 'Decision-Makers', pct: dmPct, desc: persona.seniorityLabel },
+    { label: 'Target Job Functions', pct: targetJfPct, desc: persona.jobFunctionsLabel }
   ];
 
   return `<div class="audience-quality-bars">
@@ -8976,10 +11363,13 @@ function renderAnalyticsAudience(followersReport, visitorsReport) {
     </div>`;
   }
 
-  const targetLegend = `<div class="audience-target-legend">
+  const legendPersona = currentAnalyticsPersona();
+  const targetLegend = legendPersona
+    ? `<div class="audience-target-legend">
     <span class="audience-target-dot"></span>
-    <span>Green rows = target persona (Pharma, Biotech, Chemical, Research)</span>
-  </div>`;
+    <span>Green rows = target persona (${escapeHtml(legendPersona.industriesLabel)})</span>
+  </div>`
+    : '';
 
   panel.innerHTML = `${toggleHtml}${targetLegend}
     <div id="audiencePanelsContainer"></div>`;
@@ -9009,20 +11399,21 @@ function renderAudiencePanels(viewType) {
 
   const demo = report.demographics_data;
   const countLabel = viewType === 'followers' ? 'followers' : 'views';
+  const persona = currentAnalyticsPersona();
 
   container.innerHTML = `<div class="audience-panels-row">
     <div class="audience-panel panel">
       <h4>Job Function</h4>
-      ${buildDemographicBars(demo.job_function || [], ANALYTICS_TARGET_JOB_FUNCTIONS, countLabel)}
+      ${buildDemographicBars(demo.job_function || [], persona?.jobFunctions || [], countLabel)}
     </div>
     <div class="audience-panel panel">
       <h4>Industry</h4>
-      ${buildDemographicBars(demo.industry || [], ANALYTICS_TARGET_INDUSTRIES, countLabel)}
+      ${buildDemographicBars(demo.industry || [], persona?.industries || [], countLabel)}
     </div>
     <div class="audience-panel panel">
       <h4>Seniority</h4>
-      ${buildDemographicBars(demo.seniority || [], ANALYTICS_DECISION_MAKER_SENIORITY, countLabel)}
-      ${buildDecisionMakerCallout(demo.seniority || [])}
+      ${buildDemographicBars(demo.seniority || [], persona?.decisionMakerSeniority || [], countLabel)}
+      ${persona ? buildDecisionMakerCallout(demo.seniority || [], persona) : ''}
     </div>
   </div>`;
 }
@@ -9051,14 +11442,14 @@ function buildDemographicBars(data, targetList, countLabel) {
   </div>`;
 }
 
-function buildDecisionMakerCallout(seniorityData) {
+function buildDecisionMakerCallout(seniorityData, persona) {
   const total = seniorityData.reduce((s, d) => s + d.count, 0) || 1;
   const dmCount = seniorityData
-    .filter(d => ANALYTICS_DECISION_MAKER_SENIORITY.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
+    .filter(d => persona.decisionMakerSeniority.some(t => d.name.toLowerCase().includes(t.toLowerCase())))
     .reduce((s, d) => s + d.count, 0);
   const dmPct = ((dmCount / total) * 100).toFixed(1);
   return `<div class="audience-callout">
-    <span class="audience-callout-label">Decision-makers (Mgr–CXO):</span>
+    <span class="audience-callout-label">Decision-makers (${escapeHtml(persona.seniorityLabel)}):</span>
     <span class="audience-callout-value">${dmPct}%</span>
   </div>`;
 }
@@ -9149,10 +11540,303 @@ function renderAnalyticsPostPerformance(contentReport) {
   }
 
   // Render content type chart
-  renderContentTypeChart(activePosts);
+  // Chart deferred until the LinkedIn tab is visible (hidden canvas = 0px)
+  window._liPostsForChart = activePosts;
+  const liPanelForChart = document.getElementById('analyticsTabLinkedIn');
+  if (liPanelForChart && liPanelForChart.classList.contains('active')) {
+    renderContentTypeChart(activePosts);
+  } else if (liPanelForChart) {
+    liPanelForChart.dataset.chartsPending = '1';
+  }
 
   // Render pattern cards
   renderPatternCards(activePosts);
+}
+
+// --- Instagram tab ---
+// Renders Summary + Post Performance for the Instagram (Meta) export.
+// Audience Intelligence section appears only when an instagram_audience report
+// has been uploaded (renderer stub for now; full demographics support is a
+// follow-up when that export format is captured).
+function renderAnalyticsInstagram(instagramReport, audienceReport) {
+  const panel = document.getElementById('analyticsTabInstagram');
+  if (!panel) return;
+
+  if (!instagramReport) {
+    panel.innerHTML = `
+      <div class="analytics-empty">
+        <div class="analytics-empty-icon">📷</div>
+        <p>No Instagram report uploaded yet.</p>
+        ${canUploadAnalytics() ? '<p class="mini-meta">Upload a post export from Meta Business Suite to see Instagram data.</p>' : ''}
+      </div>`;
+    return;
+  }
+
+  const s = instagramReport.summary || {};
+  const posts = Array.isArray(instagramReport.posts_data) ? instagramReport.posts_data : [];
+
+  const fmt = (n) => Number(n || 0).toLocaleString();
+  const fmtDate = (iso) => {
+    if (!iso) return '–';
+    const d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+    if (isNaN(d)) return String(iso);
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const periodLabel = s.date_from && s.date_to
+    ? `${fmtDate(s.date_from)} – ${fmtDate(s.date_to)}`
+    : '';
+
+  const accountHandle = s.account_username ? `@${s.account_username}` : '';
+  const accountHeader = (s.account_name || accountHandle)
+    ? `<div class="analytics-kpi-period"><strong>${escapeHtml(s.account_name || '')}</strong>${s.account_name && accountHandle ? ' · ' : ''}${escapeHtml(accountHandle)}${periodLabel ? ` · ${escapeHtml(periodLabel)}` : ''}</div>`
+    : '';
+
+  // Sort posts by views desc for default view; cap to top 100 for table size
+  const sortedPosts = [...posts].sort((a, b) => (Number(b.views) || 0) - (Number(a.views) || 0));
+  const displayedPosts = sortedPosts.slice(0, 100);
+  const truncatedNote = posts.length > 100
+    ? `<p class="mini-meta" style="margin-top:8px">Showing top 100 of ${fmt(posts.length)} posts (by views).</p>`
+    : '';
+
+  const postRows = displayedPosts.map((p, i) => {
+    const dateStr = p.date || (p.publish_time ? String(p.publish_time).slice(0, 10) : '');
+    const descShort = String(p.description || '').replace(/\s+/g, ' ').slice(0, 70);
+    const descCell = p.permalink
+      ? `<a href="${escapeHtml(p.permalink)}" target="_blank" rel="noopener">${escapeHtml(descShort) || '(view post)'}${(p.description || '').length > 70 ? '…' : ''}</a>`
+      : escapeHtml(descShort);
+    return `<tr class="post-table-row${i === 0 ? ' top-post' : ''}">
+      <td data-label="Date" class="mini-meta">${fmtDate(dateStr)}</td>
+      <td data-label="Type"><span class="chip">${escapeHtml(p.post_type || 'Post')}</span></td>
+      <td data-label="Post">${i === 0 ? '<span class="chip approved" style="font-size:0.65rem;padding:1px 6px;margin-right:4px">TOP</span>' : ''}${descCell}</td>
+      <td data-label="Views" style="text-align:right">${fmt(p.views)}</td>
+      <td data-label="Reach" style="text-align:right">${fmt(p.reach)}</td>
+      <td data-label="Likes" style="text-align:right">${fmt(p.likes)}</td>
+      <td data-label="Comments" style="text-align:right">${fmt(p.comments)}</td>
+      <td data-label="Saves" style="text-align:right">${fmt(p.saves)}</td>
+      <td data-label="Shares" style="text-align:right">${fmt(p.shares)}</td>
+    </tr>`;
+  }).join('');
+
+  let audienceSection = '';
+  if (audienceReport) {
+    // Placeholder — full demographics rendering arrives when we capture an IG
+    // audience export and know its schema.
+    audienceSection = `
+      <section class="panel" style="margin-top:var(--space-5)">
+        <h3>Audience Intelligence</h3>
+        <p class="mini-meta">Audience report on file — full breakdown rendering coming soon.</p>
+      </section>`;
+  }
+
+  const hasPosts = posts.length > 0;
+  const kpiSection = hasPosts ? `
+    <div class="analytics-overview-kpi">
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Posts</div><div class="analytics-kpi-value">${fmt(s.total_posts)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Views</div><div class="analytics-kpi-value">${fmt(s.total_views)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Reach</div><div class="analytics-kpi-value">${fmt(s.total_reach)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Likes</div><div class="analytics-kpi-value">${fmt(s.total_likes)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Comments</div><div class="analytics-kpi-value">${fmt(s.total_comments)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Engagement Rate</div><div class="analytics-kpi-value">${s.avg_engagement || '0.00'}%</div></div>
+    </div>` : '';
+
+  const postsSectionHtml = hasPosts ? `
+    <section class="panel" style="margin-top:var(--space-5)">
+      <h3>Post Performance</h3>
+      <table class="analytics-post-table">
+        <thead><tr>
+          <th>Date</th><th>Type</th><th>Post</th>
+          <th style="text-align:right">Views</th>
+          <th style="text-align:right">Reach</th>
+          <th style="text-align:right">Likes</th>
+          <th style="text-align:right">Comments</th>
+          <th style="text-align:right">Saves</th>
+          <th style="text-align:right">Shares</th>
+        </tr></thead>
+        <tbody>${postRows}</tbody>
+      </table>
+      ${truncatedNote}
+    </section>` : '';
+
+  // Account Trends — daily metrics from the Insights CSV uploads (one metric
+  // per file: follows, views, reach…). Keys discovered from the merged rows.
+  const daily = Array.isArray(instagramReport.metrics_data) ? instagramReport.metrics_data : [];
+  const metricKeys = [...new Set(daily.flatMap(r => Object.keys(r)))].filter(k => k !== 'date').sort();
+  const prettyMetric = (k) => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+  const trendCards = metricKeys.map(k => {
+    const total = daily.reduce((sum, r) => sum + (Number(r[k]) || 0), 0);
+    return `<div class="analytics-chart-card panel">
+      <h4>${escapeHtml(prettyMetric(k))} <span class="mini-meta">· ${fmt(total)} total</span></h4>
+      <canvas id="chartIgMetric_${escapeHtml(k)}"></canvas>
+    </div>`;
+  });
+  const trendsSection = metricKeys.length ? `
+    <section style="margin-top:var(--space-5)">
+      <h3 style="margin-bottom:var(--space-3)">Account Trends</h3>
+      ${Array.from({ length: Math.ceil(trendCards.length / 2) }, (_, i) =>
+        `<div class="analytics-charts-row">${trendCards.slice(i * 2, i * 2 + 2).join('')}</div>`).join('')}
+    </section>` : '';
+
+  panel.innerHTML = `
+    ${accountHeader}
+    ${kpiSection}
+    ${buildInsightsBanner('instagram', 'AI read on what the posts and reels say', 'Instagram insights')}
+    ${trendsSection}
+    ${postsSectionHtml}
+    ${audienceSection}
+  `;
+
+  // Charts created while this panel is display:none end up 0-height (the
+  // vendored Chart.js can't size hidden canvases, even on resize()) — so
+  // create them only when the tab is actually visible, else defer to the
+  // tab-switch handler via a pending flag.
+  window._igMetricsDaily = daily;
+  if (metricKeys.length) {
+    if (panel.classList.contains('active')) buildIgMetricCharts();
+    else panel.dataset.chartsPending = '1';
+  } else {
+    delete panel.dataset.chartsPending;
+  }
+}
+
+function buildIgMetricCharts() {
+  const panel = document.getElementById('analyticsTabInstagram');
+  const daily = window._igMetricsDaily || [];
+  if (!panel || !daily.length || typeof Chart === 'undefined') return;
+  delete panel.dataset.chartsPending;
+  const metricKeys = [...new Set(daily.flatMap(r => Object.keys(r)))].filter(k => k !== 'date').sort();
+  const colors = getChartThemeColors();
+  const chartFont = { family: "'Manrope', 'Avenir Next', sans-serif", size: 11 };
+  const recent = daily.slice(-90);
+  const labels = recent.map(r => {
+    const d = new Date(String(r.date).slice(0, 10) + 'T00:00:00');
+    return isNaN(d) ? String(r.date) : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  });
+  metricKeys.forEach(k => {
+    const canvas = document.getElementById(`chartIgMetric_${k}`);
+    if (!canvas) return;
+    const chart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: recent.map(r => Number(r[k]) || 0),
+          borderColor: colors.primary,
+          backgroundColor: colors.primarySoft,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: chartFont, color: colors.muted, maxTicksLimit: 8, maxRotation: 45 } },
+          y: { grid: { color: colors.line }, ticks: { font: chartFont, color: colors.muted }, beginAtZero: true }
+        }
+      }
+    });
+    _analyticsChartInstances.push(chart);
+  });
+}
+
+// --- Community Pulse tab ---
+// Newsletter/dispatch/survey sends + subscriber and forum community data from
+// the LeadConnector comms workbook (report_type 'community_pulse').
+function renderAnalyticsCommunity(report) {
+  const panel = document.getElementById('analyticsTabCommunity');
+  if (!panel) return;
+
+  if (!report) {
+    panel.innerHTML = `
+      <div class="analytics-empty">
+        <div class="analytics-empty-icon">📬</div>
+        <p>No community data uploaded yet.</p>
+        ${canUploadAnalytics() ? '<p class="mini-meta">Upload the comms workbook (the one with the "NewslettersAll…" per-send stats sheet, subscriber list, and forum roster) to see newsletter and community analytics.</p>' : ''}
+      </div>`;
+    return;
+  }
+
+  const s = report.summary || {};
+  const sends = Array.isArray(report.metrics_data) ? report.metrics_data : [];
+  const demo = report.demographics_data || {};
+  const fmt = (n) => Number(n || 0).toLocaleString();
+  const pct = (f) => `${((f || 0) * 100).toFixed(1)}%`;
+  const fmtDate = (iso) => {
+    if (!iso) return '–';
+    const d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+    return isNaN(d) ? String(iso) : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+  };
+  const typeChip = (t) => {
+    const cls = t === 'Dispatches' ? 'approved' : t === 'Survey' ? 'info' : 'pending';
+    return `<span class="chip ${cls}">${escapeHtml(t || 'Send')}</span>`;
+  };
+
+  const periodLabel = s.date_from && s.date_to ? `${fmtDate(s.date_from)} – ${fmtDate(s.date_to)}` : '';
+
+  const byTypeRows = Object.entries(s.by_type || {}).map(([t, v]) =>
+    `<tr><td data-label="Type">${typeChip(t)}</td><td data-label="Sends" style="text-align:right">${v.sends}</td><td data-label="Open rate" style="text-align:right">${pct(v.open_rate)}</td><td data-label="Click rate" style="text-align:right">${pct(v.click_rate)}</td></tr>`
+  ).join('');
+
+  const sendRows = sends.slice().reverse().map(r => `<tr>
+    <td data-label="Date" class="mini-meta">${fmtDate(r.date)}</td>
+    <td data-label="Send">${escapeHtml(r.name || '')}</td>
+    <td data-label="Type">${typeChip(r.send_type)}</td>
+    <td data-label="Delivered" style="text-align:right">${fmt(r.delivered)}</td>
+    <td data-label="Open rate" style="text-align:right">${pct(r.open_rate)}</td>
+    <td data-label="Click rate" style="text-align:right">${pct(r.click_rate)}</td>
+    <td data-label="Unsubs" style="text-align:right">${fmt(r.unsubscribed)}</td>
+  </tr>`).join('');
+
+  const segTable = (title, list) => (list && list.length) ? `
+    <div class="analytics-chart-card panel">
+      <h4>${escapeHtml(title)}</h4>
+      <table class="m-card-table"><tbody>
+        ${list.slice(0, 8).map(x => `<tr><td>${escapeHtml(x.name)}</td><td style="text-align:right">${fmt(x.count)}</td></tr>`).join('')}
+      </tbody></table>
+    </div>` : '';
+
+  panel.innerHTML = `
+    ${periodLabel ? `<div class="analytics-kpi-period">${escapeHtml(periodLabel)} · ${fmt(s.total_sends)} sends</div>` : ''}
+    <div class="analytics-overview-kpi">
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Subscribers</div><div class="analytics-kpi-value">${fmt(s.subscribers)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Forum Members</div><div class="analytics-kpi-value">${fmt(s.forum_members)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Open Rate</div><div class="analytics-kpi-value">${pct(s.open_rate)}</div></div>
+      <div class="analytics-kpi-card"><div class="analytics-kpi-label">Click Rate</div><div class="analytics-kpi-value">${pct(s.click_rate)}</div></div>
+    </div>
+
+    ${buildInsightsBanner('community_pulse', 'Movement lens: attention vs participation', 'Community pulse')}
+
+    <section class="panel" style="margin-top:var(--space-5)">
+      <h3>Performance by Send Type</h3>
+      <table class="m-card-table">
+        <thead><tr><th>Type</th><th style="text-align:right">Sends</th><th style="text-align:right">Open rate</th><th style="text-align:right">Click rate</th></tr></thead>
+        <tbody>${byTypeRows}</tbody>
+      </table>
+    </section>
+
+    <section class="panel" style="margin-top:var(--space-5)">
+      <h3>Sends</h3>
+      <table class="analytics-post-table">
+        <thead><tr><th>Date</th><th>Send</th><th>Type</th><th style="text-align:right">Delivered</th><th style="text-align:right">Open rate</th><th style="text-align:right">Click rate</th><th style="text-align:right">Unsubs</th></tr></thead>
+        <tbody>${sendRows}</tbody>
+      </table>
+    </section>
+
+    <div class="analytics-charts-row" style="margin-top:var(--space-5)">
+      ${segTable('Subscribers by Region', demo.subscribers?.by_region)}
+      ${segTable('Forum: Domain of Work', demo.forum?.by_domain)}
+    </div>
+    <div class="analytics-charts-row">
+      ${segTable('Subscribers by Country', demo.subscribers?.by_country)}
+      ${segTable('Forum by Region', demo.forum?.by_region)}
+    </div>
+  `;
 }
 
 function getClientName() {
@@ -9177,10 +11861,12 @@ function renderPostTable(posts, sortKey) {
   }
   const topPostIndex = 0; // first after sort = top
 
+  window._analyticsSortedPosts = sorted; // for the per-post ✦ analysis buttons
+
   container.innerHTML = `<table class="analytics-post-table">
     <thead><tr>
       <th>Title</th><th>Date</th><th>Type</th><th style="text-align:right">Impressions</th>
-      <th style="text-align:right">Clicks</th><th style="text-align:right">Eng. Rate</th>
+      <th style="text-align:right">Clicks</th><th style="text-align:right">Eng. Rate</th><th></th>
     </tr></thead>
     <tbody>${sorted.map((p, i) => {
       const title = (p['Post title'] || '').substring(0, 60);
@@ -9201,6 +11887,13 @@ function renderPostTable(posts, sortKey) {
         <td data-label="Impressions" style="text-align:right">${fmtAnalytics(p['Impressions'] || 0)}</td>
         <td data-label="Clicks" style="text-align:right">${fmtAnalytics(p['Clicks'] || 0)}</td>
         <td data-label="Eng. Rate" style="text-align:right"><span class="${engClass}">${pctAnalytics(engRate)}</span></td>
+        <td data-label="" style="text-align:right"><button class="ghost small post-insight-btn" type="button" data-post-index="${i}" title="AI analysis: this post vs ${escapeHtml(getClientName())}'s benchmarks">✦</button></td>
+      </tr>
+      <tr class="post-insight-row" id="post-insight-row-${i}" style="display:none">
+        <td colspan="7"><div class="post-insight-cell" data-insights-label="post">
+          <div class="post-insight-content insights-banner-content"></div>
+          <button class="ghost small insights-copy-btn" type="button" style="display:none">Copy insights</button>
+        </div></td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;
@@ -9254,6 +11947,14 @@ function renderContentTypeChart(posts) {
 function renderPatternCards(posts) {
   const container = document.getElementById('patternCardsContainer');
   if (!container || !posts.length) return;
+
+  // Patterns from a handful of posts are noise dressed as insight ("Mondays
+  // get more engagement" off 2 posts) — refuse below a minimum sample.
+  const MIN_PATTERN_POSTS = 5;
+  if (posts.length < MIN_PATTERN_POSTS) {
+    container.innerHTML = `<p class="mini-meta">Pattern analysis needs at least ${MIN_PATTERN_POSTS} posts in view — only ${posts.length} right now. Switch to "Show all posts" or wait for more data.</p>`;
+    return;
+  }
 
   // Pattern 1: Best content type
   const typeMap = new Map();
@@ -9315,35 +12016,130 @@ function renderPatternCards(posts) {
 }
 
 // --- Insights banner (collapsible) ---
-function buildInsightsBanner(type, previewText) {
+function buildInsightsBanner(type, previewText, label) {
   const id = `insights-banner-${type}`;
   return `<div class="insights-banner" id="${id}">
     <button class="insights-banner-trigger" type="button" data-insights-type="${type}">
       <span class="insights-banner-icon">✦</span>
-      <span class="insights-banner-label">Insights</span>
+      <span class="insights-banner-label">${escapeHtml(label || 'Insights')}</span>
       <span class="insights-banner-preview" id="${id}-preview">(${previewText || 'Click to generate analysis'})</span>
       <span class="insights-banner-chevron">›</span>
     </button>
     <div class="insights-banner-body" id="${id}-body" style="display:none">
       <div class="insights-banner-content" id="${id}-content"></div>
+      <button class="ghost small insights-copy-btn" type="button" style="display:none">Copy insights</button>
     </div>
   </div>`;
 }
 
+// Reveal the copy button once a banner has real insight text to copy
+function showInsightsCopy(banner, rawText) {
+  if (!banner || !rawText) return;
+  banner._insightsRaw = rawText;
+  const btn = banner.querySelector('.insights-copy-btn');
+  if (btn) btn.style.display = '';
+}
+
+
+// Full report context inside the analysis window, for the AI prompts.
+// The analyses should read EVERYTHING the uploaded reports can say — every
+// post with full metrics, follower gains + demographics, visitor trends —
+// not just aggregate weekly totals. Aggregates alone misdiagnose content-mix
+// swings (real case: Northwind Nonprofit's recruitment-post spike ending read as
+// "reach collapsed", Jun 2026).
+function buildInsightsContext(windowDays) {
+  const reports = window._analyticsReports || {};
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - windowDays);
+  const inWindow = (iso) => { const d = new Date(iso); return !isNaN(d) && d >= cutoff; };
+  const topSeg = (list, n = 6) => (list || []).slice()
+    .sort((a, b) => (b.count || 0) - (a.count || 0)).slice(0, n)
+    .map(s => ({ name: s.name, count: s.count }));
+
+  const cr = reports.content, fr = reports.followers, vr = reports.visitors;
+
+  const posts = (cr?.posts_data || [])
+    .map(p => ({
+      date: normalizeDateStr(p['Created date'] || p['Date'] || ''),
+      type: p['Post type'] || p['Content Type'] || '',
+      title: String(p['Post title'] || '').replace(/\s+/g, ' ').trim().slice(0, 110),
+      impressions: p['Impressions'] || 0,
+      clicks: p['Clicks'] || 0,
+      reactions: p['Likes'] || 0,
+      comments: p['Comments'] || 0,
+      reposts: p['Reposts'] || 0,
+      engagementRate: p['Engagement rate'] || 0
+    }))
+    .filter(p => inWindow(p.date))
+    .sort((a, b) => (b.impressions || 0) - (a.impressions || 0))
+    .slice(0, 80);
+
+  const followerDaily = (fr?.metrics_data || []).filter(d => inWindow(d.date));
+  const followers = fr ? {
+    gainedInWindow: followerDaily.reduce((s, d) => s + (d.total || 0), 0),
+    daily: followerDaily.map(d => ({ date: d.date, gained: d.total || 0 })),
+    demographics: fr.demographics_data ? {
+      jobFunctions: topSeg(fr.demographics_data.job_function),
+      industries: topSeg(fr.demographics_data.industry),
+      seniority: topSeg(fr.demographics_data.seniority),
+      locations: topSeg(fr.demographics_data.location),
+      companySize: topSeg(fr.demographics_data.company_size)
+    } : null
+  } : null;
+
+  const visitorDaily = (vr?.visitor_metrics || []).filter(d => inWindow(d.date));
+  const visitors = vr ? {
+    uniqueVisitorsInWindow: visitorDaily.reduce((s, d) => s + (d.total_unique || 0), 0),
+    daily: visitorDaily.map(d => ({ date: d.date, views: d.total_views || 0, unique: d.total_unique || 0 })),
+    demographics: vr.demographics_data ? {
+      jobFunctions: topSeg(vr.demographics_data.job_function),
+      industries: topSeg(vr.demographics_data.industry),
+      seniority: topSeg(vr.demographics_data.seniority)
+    } : null
+  } : null;
+
+  return { posts, followers, visitors };
+}
+
+// Instagram payload: the full post export (top 80 by views) + summary.
+function buildInstagramInsightsData() {
+  const ig = (window._analyticsReports || {}).instagram;
+  if (!ig) return null;
+  return {
+    summary: ig.summary || null,
+    dailyMetrics: (ig.metrics_data || []).slice(-120),
+    posts: (ig.posts_data || []).slice()
+      .sort((a, b) => (Number(b.views) || 0) - (Number(a.views) || 0))
+      .slice(0, 80)
+      .map(p => ({
+        date: p.date || (p.publish_time ? String(p.publish_time).slice(0, 10) : ''),
+        type: p.post_type || '',
+        description: String(p.description || '').replace(/\s+/g, ' ').trim().slice(0, 110),
+        views: p.views || 0,
+        reach: p.reach || 0,
+        likes: p.likes || 0,
+        comments: p.comments || 0,
+        saves: p.saves || 0,
+        shares: p.shares || 0,
+        follows: p.follows || 0,
+        durationSec: p.duration_sec || 0
+      }))
+  };
+}
 
 // --- Insights API calls + click handling ---
 // Cache is stored in DB: client_analytics.insights_cache (JSONB)
 // Key format: `${type}-${viewMode}` or `post-${postIndex}-${viewMode}`
 // New upload = new DB row = empty cache automatically
 
-function getDbInsightCache(key) {
-  const report = window._analyticsCurrentReport;
+function getDbInsightCache(key, reportOverride) {
+  const report = reportOverride || window._analyticsCurrentReport;
   if (!report || !report.insights_cache) return null;
   return report.insights_cache[key] || null;
 }
 
-async function setDbInsightCache(key, insights) {
-  const report = window._analyticsCurrentReport;
+async function setDbInsightCache(key, insights, reportOverride) {
+  const report = reportOverride || window._analyticsCurrentReport;
   if (!report) return;
   // Update local object immediately
   if (!report.insights_cache) report.insights_cache = {};
@@ -9388,6 +12184,81 @@ async function fetchInsights(analysisType, data, clientName, extras) {
 const analyticsScreenEl = document.getElementById('client-analytics');
 if (analyticsScreenEl) {
   analyticsScreenEl.addEventListener('click', async (e) => {
+    // --- Copy insights (for pasting into a client email) ---
+    const copyBtn = e.target.closest('.insights-copy-btn');
+    if (copyBtn) {
+      e.preventDefault();
+      const holder = copyBtn.closest('.insights-banner, .post-insight-cell');
+      const raw = holder?._insightsRaw || '';
+      if (!raw) return;
+      const type = holder?.querySelector('.insights-banner-trigger')?.dataset.insightsType || holder?.dataset.insightsLabel || '';
+      const labelMap = { 'brand-signal': 'Brand signal', weekly: 'Weekly', monthly: 'Monthly', instagram: 'Instagram', post: 'Post', community_pulse: 'Community pulse' };
+      const clientRow = state.clients?.find(c => c.id === analyticsCurrentClientId);
+      const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const channelLabel = type === 'instagram' ? 'Instagram' : type === 'community_pulse' ? 'Newsletter & community' : 'LinkedIn';
+      const header = `${clientRow?.name || 'Client'} — ${labelMap[type] || 'AI'} insights (${channelLabel}) · ${dateStr}`;
+      try {
+        await navigator.clipboard.writeText(`${header}\n\n${raw}`);
+        copyBtn.textContent = 'Copied ✓';
+      } catch (err) {
+        console.error('Copy failed:', err);
+        copyBtn.textContent = 'Copy failed';
+      }
+      setTimeout(() => { copyBtn.textContent = 'Copy insights'; }, 2000);
+      return;
+    }
+
+    // --- Per-post deep analysis (Post Performance tab) ---
+    const postBtn = e.target.closest('.post-insight-btn');
+    if (postBtn) {
+      e.preventDefault();
+      const idx = Number(postBtn.dataset.postIndex);
+      const post = (window._analyticsSortedPosts || [])[idx];
+      const row = document.getElementById(`post-insight-row-${idx}`);
+      const cell = row?.querySelector('.post-insight-cell');
+      if (!post || !row || !cell) return;
+      if (row.style.display !== 'none') { row.style.display = 'none'; return; }
+      row.style.display = '';
+
+      // Stable per-post cache key: the post link's ID, else date + title stub
+      const linkKey = String(post['Post link'] || '').split('/').filter(Boolean).pop() || '';
+      const stableKey = linkKey || `${normalizeDateStr(post['Created date'] || '')}-${String(post['Post title'] || '').slice(0, 24)}`;
+      const postCacheKey = `post-${stableKey}-organic-v1`;
+      const contentEl = cell.querySelector('.post-insight-content');
+      const showResult = (text) => {
+        contentEl.innerHTML = formatInsightsText(text);
+        cell._insightsRaw = text;
+        const b = cell.querySelector('.insights-copy-btn');
+        if (b) b.style.display = '';
+      };
+      const postCached = getDbInsightCache(postCacheKey);
+      if (postCached) { showResult(postCached); return; }
+
+      contentEl.innerHTML = '<div class="insights-loading"><span class="insights-spinner"></span> Analyzing vs benchmarks...</div>';
+      try {
+        // Benchmarks: this client's posts of the same channel (Post type)
+        const all = (window._analyticsReports?.content?.posts_data || [])
+          .filter(p => (p['Post type'] || '') === (post['Post type'] || ''));
+        const imprs = all.map(p => p['Impressions'] || 0);
+        const totalImpr = imprs.reduce((s, v) => s + v, 0);
+        const benchmarks = all.length ? {
+          avgImpressions: totalImpr / all.length,
+          avgEngRate: all.reduce((s, p) => s + (p['Engagement rate'] || 0), 0) / all.length,
+          avgCTR: totalImpr > 0 ? ((all.reduce((s, p) => s + (p['Clicks'] || 0), 0) / totalImpr) * 100).toFixed(2) : '0.00',
+          totalPosts: all.length,
+          maxImpressions: Math.max(...imprs),
+          minImpressions: Math.min(...imprs)
+        } : null;
+        const result = await fetchInsights('post', post, getClientName(), { viewMode: 'organic', benchmarks });
+        await setDbInsightCache(postCacheKey, result.insights);
+        showResult(result.insights);
+      } catch (err) {
+        console.error('Post insight error:', err);
+        contentEl.innerHTML = `<div class="insights-error">Could not generate insights. ${escapeHtml(err.message)}</div>`;
+      }
+      return;
+    }
+
     // --- Banner trigger click ---
     const trigger = e.target.closest('.insights-banner-trigger');
     if (trigger) {
@@ -9411,12 +12282,21 @@ if (analyticsScreenEl) {
       chevron.textContent = '‹';
       banner.classList.add('open');
 
-      // Check DB-persisted cache (v2 = week-on-week scoped data)
+      // Check DB-persisted cache. Version bumps force regeneration when the
+      // payload gets richer: v4 weekly/monthly + v3 brand-signal = full report
+      // context (all posts, followers, visitors); instagram v1 = new analysis.
       const vm = 'organic';
-      const cacheKey = `${type}-${vm}-v2`;
-      const cached = getDbInsightCache(cacheKey);
+      const CACHE_VER = { weekly: 'v4', monthly: 'v4', 'brand-signal': 'v3', instagram: 'v3', community_pulse: 'v1' };
+      const cacheKey = `${type}-${vm}-${CACHE_VER[type] || 'v2'}`;
+      // Instagram/community insights cache on their own report rows (there may
+      // be no content report for e.g. IG-only clients like Acme Media).
+      const cacheReport = type === 'instagram' ? (window._analyticsReports || {}).instagram
+        : type === 'community_pulse' ? (window._analyticsReports || {}).community_pulse
+        : undefined;
+      const cached = getDbInsightCache(cacheKey, cacheReport);
       if (cached) {
         content.innerHTML = formatInsightsText(cached);
+        showInsightsCopy(banner, cached);
         return;
       }
 
@@ -9478,15 +12358,25 @@ if (analyticsScreenEl) {
             followerDemographics: fr?.demographics_data || null,
             visitorDemographics: vr?.demographics_data || null,
           };
+          // Brand signal reads the posts too — same content-mix blindness fix.
+          analysisData.recentPostsDetail = buildInsightsContext(14).posts;
+        } else if (type === 'instagram') {
+          analysisData = buildInstagramInsightsData();
+          if (!analysisData) throw new Error('No Instagram report loaded');
+        } else if (type === 'community_pulse') {
+          const rep = (window._analyticsReports || {}).community_pulse;
+          if (!rep) throw new Error('No community pulse report loaded');
+          analysisData = { summary: rep.summary || null, sends: rep.metrics_data || [], demographics: rep.demographics_data || null };
         } else if (type === 'monthly') {
-          analysisData = aggregateWeeklyToMonthly(weekly);
+          analysisData = { months: aggregateWeeklyToMonthly(weekly), ...buildInsightsContext(120) };
         } else {
-          analysisData = weekly;
+          analysisData = { weeks: weekly, ...buildInsightsContext(35) };
         }
 
         const result = await fetchInsights(type, analysisData, clientName, { viewMode: vm });
-        await setDbInsightCache(cacheKey, result.insights);
+        await setDbInsightCache(cacheKey, result.insights, cacheReport);
         content.innerHTML = formatInsightsText(result.insights);
+        showInsightsCopy(banner, result.insights);
 
         // Update preview text
         const preview = banner.querySelector('.insights-banner-preview');
@@ -9529,118 +12419,56 @@ window._analyticsCurrentReport = null;
 // END CLIENT ANALYTICS
 // =============================================
 
-function filterMatrixBySearch(query) {
-  if (!matrixBody) return;
+function filterPlannerBySearch(query) {
   const q = (query || '').toLowerCase().trim();
-  const rows = [...matrixBody.querySelectorAll('tr')];
-  const visibleDepts = new Set();
-
-  rows.forEach((row) => {
-    if (row.classList.contains('matrix-dept-row')) return;
-    if (row.classList.contains('matrix-detail-row')) {
-      row.classList.add('hidden');
-      return;
-    }
-    const name = row.dataset.empName || '';
-    const dept = row.dataset.empDept || '';
-    const visible = !q || name.includes(q) || dept.includes(q);
-    row.classList.toggle('hidden', !visible);
-    if (visible) {
-      let prev = row.previousElementSibling;
-      while (prev && !prev.classList.contains('matrix-dept-row')) {
-        prev = prev.previousElementSibling;
-      }
-      if (prev) visibleDepts.add(prev);
-    }
-  });
-
-  rows.forEach((row) => {
-    if (row.classList.contains('matrix-dept-row')) {
-      row.classList.toggle('hidden', q && !visibleDepts.has(row));
-    }
-  });
+  if (_plannerActiveView === 'people' && plannerPeopleView) {
+    const persons = plannerPeopleView.querySelectorAll('.rp-person');
+    const deptHeaders = plannerPeopleView.querySelectorAll('.rp-dept-header');
+    const visibleDepts = new Set();
+    persons.forEach(el => {
+      const name = el.dataset.empName || '';
+      const dept = el.dataset.empDept || '';
+      const visible = !q || name.includes(q) || dept.includes(q);
+      el.style.display = visible ? '' : 'none';
+      if (visible) visibleDepts.add(dept);
+    });
+    deptHeaders.forEach(h => {
+      const dept = (h.textContent || '').toLowerCase();
+      h.style.display = (!q || visibleDepts.has(dept)) ? '' : 'none';
+    });
+  } else if (_plannerActiveView === 'clients' && plannerClientView) {
+    const cards = plannerClientView.querySelectorAll('.rp-client-card');
+    cards.forEach(el => {
+      const name = el.dataset.clientName || '';
+      const visible = !q || name.includes(q);
+      el.style.display = visible ? '' : 'none';
+    });
+  }
 }
 
-function toggleMatrixDrillDown(empId) {
-  if (!matrixBody) return;
-  const existingDetail = matrixBody.querySelector(`.matrix-detail-row[data-detail-emp="${empId}"]`);
-  const empRow = matrixBody.querySelector(`tr[data-emp-id="${empId}"]`);
-  const icon = empRow?.querySelector('.expand-icon');
-
-  if (existingDetail) {
-    existingDetail.remove();
-    if (icon) icon.classList.remove('open');
-    return;
-  }
-
-  const weekStarts = state._matrixWeekStarts || [];
-  const weekProjectAlloc = state._matrixEmpWeekProjectAlloc?.get(empId);
-  const projectColumns = state._matrixProjectColumns || [];
-  if (!weekProjectAlloc || !weekStarts.length) return;
-
-  const colCount = projectColumns.length + 3;
-  const weekStartsDisplay = weekStarts.slice(0, 4);
-
-  let detailHtml = '<div class="matrix-week-grid">';
-  detailHtml += `<span class="wk-label">Project</span>`;
-  weekStartsDisplay.forEach((ws) => {
-    detailHtml += `<span class="wk-label">${escapeHtml(shortWeekLabel(ws))}</span>`;
-  });
-  for (let i = weekStartsDisplay.length; i < 4; i++) {
-    detailHtml += `<span class="wk-label">—</span>`;
-  }
-
-  projectColumns.forEach((projName) => {
-    const hasAny = weekStartsDisplay.some((ws) => {
-      const projMap = weekProjectAlloc.get(ws);
-      return projMap && (projMap.get(projName) || 0) > 0;
-    });
-    if (!hasAny) return;
-
-    detailHtml += `<span class="wk-proj">${escapeHtml(projName)}</span>`;
-    weekStartsDisplay.forEach((ws) => {
-      const projMap = weekProjectAlloc.get(ws);
-      const val = Math.round(projMap ? (projMap.get(projName) || 0) : 0);
-      if (val <= 0) {
-        detailHtml += '<span class="wk-val" style="color:#c8cdd6">\u2014</span>';
-      } else {
-        const tone = weekUtilToneClass(val);
-        const color = tone === 'over' ? '#8e2222' : '#1d4f8e';
-        detailHtml += `<span class="wk-val" style="color:${color}">${val}%</span>`;
-      }
-    });
-    for (let i = weekStartsDisplay.length; i < 4; i++) {
-      detailHtml += '<span class="wk-val">\u2014</span>';
-    }
-  });
-  detailHtml += '</div>';
-
-  const detailRow = document.createElement('tr');
-  detailRow.className = 'matrix-detail-row';
-  detailRow.dataset.detailEmp = empId;
-  detailRow.innerHTML = `<td colspan="${colCount}">${detailHtml}</td>`;
-
-  if (empRow && empRow.nextSibling) {
-    matrixBody.insertBefore(detailRow, empRow.nextSibling);
-  } else {
-    matrixBody.appendChild(detailRow);
-  }
-
-  if (icon) icon.classList.add('open');
-}
-
-// Matrix click handler for drill-down
+// Person click → navigate to profile
 document.addEventListener('click', (e) => {
-  const empNameEl = e.target.closest('.matrix-emp-name');
-  if (empNameEl) {
-    const empId = empNameEl.dataset.empId;
-    if (empId) toggleMatrixDrillDown(empId);
+  const nameEl = e.target.closest('.rp-person-name');
+  if (nameEl?.dataset.empId) {
+    navigateToScreen('employee-profile', { replace: false, empId: nameEl.dataset.empId });
   }
+});
+
+// View toggle
+document.getElementById('plannerViewToggle')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.pvt-btn');
+  if (!btn || btn.classList.contains('active')) return;
+  const view = btn.dataset.view;
+  _plannerActiveView = view;
+  document.querySelectorAll('#plannerViewToggle .pvt-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  renderActivePlannerView();
+  // Re-apply search filter
+  if (matrixSearch?.value) filterPlannerBySearch(matrixSearch.value);
 });
 
 if (matrixSearch) {
   matrixSearch.addEventListener('input', () => {
-    filterMatrixBySearch(matrixSearch.value);
+    filterPlannerBySearch(matrixSearch.value);
   });
 }
 
@@ -9740,6 +12568,12 @@ if (portfolioTableBody) {
       return;
     }
 
+    if (action === 'scope-coverage' && canEditScopeCoverage()) {
+      scopeCoverageCurrentClientId = clientId;
+      navigateToScreen('client-scope-coverage');
+      return;
+    }
+
     if (action === 'edit' && canEditClients()) {
       startClientEdit(clientId);
       return;
@@ -9798,6 +12632,8 @@ const profileEmailInput = document.getElementById('profileEmailInput');
 const profileCapacityInput = document.getElementById('profileCapacityInput');
 const profileBirthday = document.getElementById('profileBirthday');
 const profileCity = document.getElementById('profileCity');
+const profileEmergencyName = document.getElementById('profileEmergencyName');
+const profileEmergencyPhone = document.getElementById('profileEmergencyPhone');
 const profilePeriod = document.getElementById('profilePeriod');
 const profileWeekFilterWrap = document.getElementById('profileWeekFilterWrap');
 const profileWeekFilter = document.getElementById('profileWeekFilter');
@@ -9814,7 +12650,7 @@ function setProfileSaveNotice(message = '', className = 'mini-meta') {
 function selectedDirectoryEmployeeByName(name = state.currentEmployee) {
   const targetName = String(name || '').trim();
   if (!targetName) return null;
-  return state.employeeDirectory.find((entry) => entry.full_name === targetName) || null;
+  return lookupActiveEmployeeByFullName(targetName);
 }
 
 function parseCapacityPercentInput(value) {
@@ -10164,42 +13000,34 @@ async function saveCurrentProfile() {
 
   const birthdayValue = profileBirthday?.value || null;
   const cityValue = profileCity?.value?.trim() || null;
+  const emergNameValue = profileEmergencyName?.value?.trim() || null;
+  const emergPhoneValue = profileEmergencyPhone?.value?.trim() || null;
   const updatePayload = {
     full_name: updatedName,
     department_id: departmentId,
     employment_type: selectedEmploymentType,
     capacity_percent: parsedCapacity,
     date_of_birth: birthdayValue,
-    current_city: cityValue
+    current_city: cityValue,
+    emergency_contact_name: emergNameValue,
+    emergency_contact_phone: emergPhoneValue
   };
   if (canManageAccessRoles()) {
     updatePayload.access_level = selectedAccessLevel;
     updatePayload.role_title =
       selectedAccessLevel === 'admin' ? 'Admin' : selectedAccessLevel === 'leadership' ? 'Leadership' : 'Employee';
   }
-  if (isLeadershipRole() && profileManagerSelect) {
+  if (profileManagerSelect) {
     updatePayload.direct_manager_email = profileManagerSelect.value || null;
   }
 
   setProfileSaveNotice('Saving profile...', 'mini-meta');
 
-  if (isLeadershipRole()) {
+  {
+    updatePayload.updated_at = new Date().toISOString();
     const updateResult = await state.supabase.from('employees').update(updatePayload).eq('id', targetEmployeeId);
     if (updateResult.error) {
       setProfileSaveNotice(`Unable to save profile: ${updateResult.error.message}`, 'status error');
-      return;
-    }
-  } else {
-    const rpcResult = await state.supabase.rpc('update_my_profile', {
-      p_full_name: updatedName,
-      p_department_name: selectedTeam,
-      p_employment_type: selectedEmploymentType,
-      p_capacity_percent: parsedCapacity,
-      p_date_of_birth: birthdayValue,
-      p_current_city: cityValue
-    });
-    if (rpcResult.error) {
-      setProfileSaveNotice(`Unable to save profile: ${rpcResult.error.message}`, 'status error');
       return;
     }
   }
@@ -10220,7 +13048,7 @@ async function saveCurrentProfile() {
 
   await loadEmployeeDirectoryFromSupabase();
   if (targetEmployeeId === state.currentEmployeeId) {
-    const ownRow = state.employeeDirectory.find((entry) => entry.id === state.currentEmployeeId);
+    const ownRow = lookupActiveEmployee(state.currentEmployeeId);
     if (ownRow) {
       state.employeeProfile = {
         ...(state.employeeProfile || {}),
@@ -10305,7 +13133,7 @@ function renderProfileDailyTasks() {
     const statusMeta = getDailyTaskStatusMeta(task.status);
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td data-label="Task">${escapeHtml(task.task_title)}</td>
+      <td data-label="Task">${task.recurring_task_id ? '<span class="recur-mark" title="Repeats monthly">\u21bb</span> ' : ''}${taskTitleHtml(task)}</td>
       <td data-label="Client">${escapeHtml(task.notes || '--')}</td>
       <td data-label="Status"><span class="chip ${statusMeta.className}">${statusMeta.label}</span></td>
     `;
@@ -10329,7 +13157,7 @@ function setSelectedEmployee(name) {
   const selectedEmployeeId = getEmployeeIdByName(targetName);
   const selectedDirectoryEmployee =
     selectedDirectoryEmployeeByName(targetName) ||
-    (selectedEmployeeId ? state.employeeDirectory.find((entry) => entry.id === selectedEmployeeId) : null);
+    lookupActiveEmployee(selectedEmployeeId);
 
   if (isLeadershipRole() && selectedEmployeeId) {
     state.taskViewEmployeeId = selectedEmployeeId;
@@ -10402,6 +13230,12 @@ function setSelectedEmployee(name) {
   }
   if (profileCity) {
     profileCity.value = selectedDirectoryEmployee?.current_city || '';
+  }
+  if (profileEmergencyName) {
+    profileEmergencyName.value = selectedDirectoryEmployee?.emergency_contact_name || '';
+  }
+  if (profileEmergencyPhone) {
+    profileEmergencyPhone.value = selectedDirectoryEmployee?.emergency_contact_phone || '';
   }
   if (saveProfileBtn) {
     const canSave = state.isAuthenticated && canEditEmployee(selectedDirectoryEmployee || { id: selectedEmployeeId, email: state.session?.user?.email });
@@ -10664,7 +13498,7 @@ function applyDealFlowVisibility() {
 }
 
 // Invoice Center password gate — one unlock per session
-const INVOICE_PIN_HASH = 'e9dde5cc1465ecb66b2d761a3799803f283e5327909f248e22990e407ba1ace4';
+const INVOICE_PIN_HASH = 'aa645668ba1018e0a7fe1d84993cb3be3f9d01e0ee4ed959b6bc97845e340439';
 let invoiceUnlocked = false;
 
 async function hashPin(pin) {
@@ -10675,14 +13509,19 @@ async function hashPin(pin) {
 
 async function checkInvoiceAccess() {
   if (invoiceUnlocked) return true;
-  const pin = prompt('Enter Invoice Center PIN:');
+  const pin = await colonyPrompt('Enter the Invoice Center PIN to continue.', {
+    title: 'Invoice Center',
+    type: 'password',
+    placeholder: 'PIN',
+    okLabel: 'Unlock'
+  });
   if (!pin) return false;
   const hash = await hashPin(pin.trim());
   if (hash === INVOICE_PIN_HASH) {
     invoiceUnlocked = true;
     return true;
   }
-  alert('Incorrect PIN.');
+  await colonyAlert('Incorrect PIN.', { title: 'Invoice Center' });
   return false;
 }
 
@@ -10698,7 +13537,7 @@ async function loadInvoices() {
 
   const response = await state.supabase
     .from('invoices')
-    .select('id, employee_id, invoice_month, file_name, file_path, file_size_bytes, uploaded_at, notes, employee:employees!invoices_employee_id_fkey(full_name)')
+    .select('id, employee_id, invoice_month, invoice_type, file_name, file_path, file_size_bytes, uploaded_at, notes, employee:employees!invoices_employee_id_fkey(full_name)')
     .order('uploaded_at', { ascending: false });
 
   if (response.error) {
@@ -10727,7 +13566,7 @@ function renderInvoiceChecklist() {
   const filterMonth = invoiceFilterMonth?.value || currentInvoiceMonth();
   const employees = state.employeeDirectory
     .filter(e => e.department?.leave_tracking_enabled !== false)
-    .filter(e => !INVOICE_EXCLUDED_EMAILS.includes(normalizeEmail(e.email || '')))
+    .filter(e => !getInvoiceExcludedEmails().includes(normalizeEmail(e.email || '')))
     .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
 
   const monthInvoices = state.invoices.filter(inv => inv.invoice_month === filterMonth);
@@ -10775,7 +13614,7 @@ function renderProfileInvoicePanel() {
   // Only show on own profile for non-finance, non-excluded employees
   const isOwnProfile = state.selectedEmployeeId === state.currentEmployeeId || !state.selectedEmployeeId;
   const finance = isFinanceUser();
-  const excludedFromInvoice = INVOICE_EXCLUDED_EMAILS.includes(normalizeEmail(state.session?.user?.email || ''));
+  const excludedFromInvoice = getInvoiceExcludedEmails().includes(normalizeEmail(state.session?.user?.email || ''));
   if (!isOwnProfile || finance || excludedFromInvoice || !state.isAuthenticated) {
     profileInvoicePanel.style.display = 'none';
     return;
@@ -10957,7 +13796,7 @@ async function downloadInvoice(filePath) {
 }
 
 async function deleteInvoice(invoiceId, filePath) {
-  if (!confirm('Delete this invoice? This cannot be undone.')) return;
+  if (!await colonyConfirm('Delete this invoice? This cannot be undone.', { title: 'Delete invoice', confirmLabel: 'Delete', danger: true })) return;
 
   const { error: storageErr } = await state.supabase.storage
     .from('invoices')
@@ -11018,14 +13857,14 @@ if (invoiceFilterMonth) {
 
 const DEAL_STAGES = [
   { key: 'qualified', label: 'Qualifying', prob: '20%' },
-  { key: 'pitch', label: 'Pitching', prob: '50%' },
+  { key: 'discovery', label: 'Discovery', prob: '50%' },
   { key: 'proposal', label: 'Proposal', prob: '70%' },
   { key: 'negotiated', label: 'Negotiating', prob: '90%' },
   { key: 'contracted', label: 'Contracted', prob: '100%' },
   { key: 'stalled', label: 'Stalled', prob: '0%' },
   { key: 'closedlost', label: 'Lost', prob: '0%' },
 ];
-const DEAL_OPEN_STAGES = ['qualified', 'pitch', 'proposal', 'negotiated'];
+const DEAL_OPEN_STAGES = ['qualified', 'discovery', 'proposal', 'negotiated'];
 const DEAL_STAGE_LABEL = Object.fromEntries(DEAL_STAGES.map(s => [s.key, s.label]));
 
 // DOM refs
@@ -11063,7 +13902,8 @@ async function loadDealsFromSupabase() {
   const { data, error } = await state.supabase
     .from('deals')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(1000);
   if (error) {
     console.error('Failed to load deals:', error.message);
     return;
@@ -11101,15 +13941,15 @@ function renderDealFlow() {
   const filtered = isOpen ? getFilteredHotDeals() : getFilteredDealsByFilter(filter);
   if (showBoard) {
     renderDealBoard(filtered);
-  } else if (filter === 'contracted') {
-    renderContractedListView(filtered);
+  } else if (filter === 'active' || filter === 'archived') {
+    renderContractedListView(filtered, filter);
   } else {
     renderDealListView(filtered);
   }
 }
 
 function getFilteredHotDeals() {
-  let deals = getCompanyDeals().filter(d => d.section === 'hot' && DEAL_OPEN_STAGES.includes(d.stage));
+  let deals = getCompanyDeals().filter(d => DEAL_OPEN_STAGES.includes(d.stage));
   if (state.dealFilterPoc) {
     deals = deals.filter(d => d.poc_employee_id === state.dealFilterPoc);
   }
@@ -11124,7 +13964,7 @@ function getFilteredDealsByFilter(filter) {
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
   const companyDeals = getCompanyDeals();
-  const hot = companyDeals.filter(d => d.section === 'hot' && DEAL_OPEN_STAGES.includes(d.stage));
+  const hot = companyDeals.filter(d => DEAL_OPEN_STAGES.includes(d.stage));
 
   let deals;
   switch (filter) {
@@ -11132,7 +13972,8 @@ function getFilteredDealsByFilter(filter) {
       deals = hot.filter(d => d.deadline && d.deadline < todayStr); break;
     case 'stalled':
       deals = companyDeals.filter(d => d.stage === 'stalled'); break;
-    case 'contracted':
+    case 'active':
+    case 'archived':
       deals = companyDeals.filter(d => d.stage === 'contracted').sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')); break;
     case 'lost':
       deals = companyDeals.filter(d => d.stage === 'closedlost').sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')); break;
@@ -11154,7 +13995,7 @@ function getFilteredDealsByFilter(filter) {
 function renderDealStats() {
   if (!dealStatsBar) return;
   const companyDeals = getCompanyDeals();
-  const hot = companyDeals.filter(d => d.section === 'hot' && DEAL_OPEN_STAGES.includes(d.stage));
+  const hot = companyDeals.filter(d => DEAL_OPEN_STAGES.includes(d.stage));
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
 
@@ -11162,8 +14003,7 @@ function renderDealStats() {
   const stalledDeals = companyDeals.filter(d => d.stage === 'stalled');
   const stalled = stalledDeals.length;
   const stalledHasFollowup = stalledDeals.some(d => d.deadline);
-  const EXCLUDED_CLIENTS = ['internal', 'misc', 'pitches/bd'];
-  const contracted = (state.clients || []).filter(c => c.is_active && !EXCLUDED_CLIENTS.includes(c.name.toLowerCase())).length;
+  const { active: activeContracted, archived: archivedContracted } = partitionContractedDeals(companyDeals);
   const lost = companyDeals.filter(d => d.stage === 'closedlost').length;
 
   // Color logic: Open = always yellow, Stalled = red if follow-up date exists, Contracted = green
@@ -11176,13 +14016,14 @@ function renderDealStats() {
     <div class="deal-stat deal-stat-link${f === 'open' ? ' deal-stat-active' : ''}${openClass}" data-filter="open"><span class="deal-stat-num">${hot.length}</span><span class="deal-stat-label">Open Deals</span></div>
     <div class="deal-stat deal-stat-link${f === 'overdue' ? ' deal-stat-active' : ''}${overdue ? ' deal-stat-bad' : ''}" data-filter="overdue"><span class="deal-stat-num">${overdue}</span><span class="deal-stat-label">Overdue</span></div>
     <div class="deal-stat deal-stat-link${f === 'stalled' ? ' deal-stat-active' : ''}${stalledClass}" data-filter="stalled"><span class="deal-stat-num">${stalled}</span><span class="deal-stat-label">Stalled</span></div>
-    <div class="deal-stat deal-stat-link${f === 'contracted' ? ' deal-stat-active' : ''}${contractedClass}" data-filter="contracted"><span class="deal-stat-num">${contracted}</span><span class="deal-stat-label">Contracted</span></div>
+    <div class="deal-stat deal-stat-link${f === 'active' ? ' deal-stat-active' : ''}${contractedClass}" data-filter="active"><span class="deal-stat-num">${activeContracted.length}</span><span class="deal-stat-label">Active</span></div>
     <div class="deal-stat deal-stat-link${f === 'lost' ? ' deal-stat-active' : ''}" data-filter="lost"><span class="deal-stat-num">${lost}</span><span class="deal-stat-label">Lost</span></div>
+    <div class="deal-stat deal-stat-link${f === 'archived' ? ' deal-stat-active' : ''}" data-filter="archived"><span class="deal-stat-num">${archivedContracted.length}</span><span class="deal-stat-label">Archived</span></div>
   `;
 }
 
 // ── POC filter ──
-const DEAL_POC_EMAILS = ['admin@youragency.com', 'sales@youragency.com'];
+const DEAL_POC_EMAILS = ['admin@youragency.com']; // POCs reassigned to the superadmin only (14 Jun)
 
 function getDealPocEmployees() {
   return state.employeeDirectory.filter(e => DEAL_POC_EMAILS.includes(normalizeEmail(e.email)));
@@ -11285,7 +14126,7 @@ function renderDealBoard(deals) {
 }
 
 function renderDealCard(deal) {
-  const poc = deal.poc_employee_id ? state.employeeDirectory.find(e => e.id === deal.poc_employee_id) : null;
+  const poc = lookupEmployee(deal.poc_employee_id);
   const pocLabel = poc ? escapeHtml(poc.full_name.split(' ')[0]) : '';
   const initials = poc ? poc.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : '';
   const nextStep = deal.next_steps ? escapeHtml(deal.next_steps).slice(0, 60) : '';
@@ -11367,17 +14208,12 @@ async function updateDealStage(dealId, newStage) {
   // If moving to a closing stage, confirm
   if (newStage === 'contracted' || newStage === 'closedlost' || newStage === 'stalled') {
     const label = DEAL_STAGE_LABEL[newStage];
-    if (!confirm(`Move "${deal.deal_name}" to ${label}?`)) return;
+    if (!await colonyConfirm(`Move "${deal.deal_name}" to ${label}?`)) return;
   }
-
-  let newSection = deal.section;
-  if (newStage === 'contracted') newSection = 'active';
-  else if (newStage === 'closedlost' || newStage === 'stalled') newSection = 'cold';
-  else if (DEAL_OPEN_STAGES.includes(newStage)) newSection = 'hot';
 
   const { error } = await state.supabase
     .from('deals')
-    .update({ stage: newStage, section: newSection })
+    .update({ stage: newStage })
     .eq('id', dealId);
   if (error) {
     console.error('Stage update failed:', error.message);
@@ -11385,11 +14221,12 @@ async function updateDealStage(dealId, newStage) {
   }
 
   // Log stage change
-  await state.supabase.from('deal_stage_history').insert({
+  const histInsert = await state.supabase.from('deal_stage_history').insert({
     deal_id: dealId,
     stage: newStage,
     changed_by: state.currentEmployeeId
   });
+  if (histInsert.error) console.error('Stage history insert failed:', histInsert.error.message);
 
   // Close previous stage history entry
   const { data: prevEntries } = await state.supabase
@@ -11399,10 +14236,11 @@ async function updateDealStage(dealId, newStage) {
     .eq('stage', oldStage)
     .is('exited_at', null);
   if (prevEntries?.length) {
-    await state.supabase
+    const exitRes = await state.supabase
       .from('deal_stage_history')
       .update({ exited_at: new Date().toISOString() })
       .in('id', prevEntries.map(e => e.id));
+    if (exitRes.error) console.error('Stage history exit failed:', exitRes.error.message);
   }
 
   await loadDealsFromSupabase();
@@ -11413,12 +14251,18 @@ async function updateDealStage(dealId, newStage) {
   }
 }
 
-function offerClientLinking(deal) {
-  const action = prompt(`"${deal.deal_name}" is now Closed Won!\n\nType "new" to create a new Client entry, or "link" to link to an existing one, or press Cancel to skip.`);
-  if (!action) return;
-  if (action.toLowerCase() === 'new') {
+async function offerClientLinking(deal) {
+  const action = await colonyChoice(`"${deal.deal_name}" is now Closed Won! Add it to the client registry?`, {
+    title: 'Deal won 🎉',
+    choices: [
+      { label: 'Create a new client entry', value: 'new', variant: 'primary' },
+      { label: 'Link to an existing client', value: 'link' }
+    ],
+    cancelLabel: 'Skip for now'
+  });
+  if (action === 'new') {
     createClientFromDeal(deal);
-  } else if (action.toLowerCase() === 'link') {
+  } else if (action === 'link') {
     linkDealToExistingClient(deal);
   }
 }
@@ -11431,26 +14275,28 @@ async function createClientFromDeal(deal) {
     .single();
   if (error) {
     console.error('Failed to create client:', error.message);
-    alert('Failed to create client: ' + error.message);
+    await colonyAlert('Failed to create client: ' + error.message, { title: 'Deal Flow' });
     return;
   }
-  await state.supabase.from('deals').update({ client_id: data.id }).eq('id', deal.id);
-  alert(`Client "${deal.deal_name}" created and linked!`);
-  loadDealsFromSupabase();
+  const linkRes = await state.supabase.from('deals').update({ client_id: data.id }).eq('id', deal.id);
+  if (linkRes.error) { await colonyAlert('Client created but failed to link deal: ' + linkRes.error.message, { title: 'Deal Flow' }); }
+  else { await colonyAlert(`Client "${deal.deal_name}" created and linked!`, { title: 'Deal Flow' }); }
+  await loadDealsFromSupabase();
 }
 
 async function linkDealToExistingClient(deal) {
-  const clientNames = state.clients.filter(c => c.is_active).map(c => c.name).join('\n');
-  const chosen = prompt(`Enter client name to link:\n\n${clientNames}`);
-  if (!chosen) return;
-  const match = state.clients.find(c => c.name.toLowerCase() === chosen.toLowerCase());
-  if (!match) {
-    alert('Client not found. Please try again.');
-    return;
-  }
-  await state.supabase.from('deals').update({ client_id: match.id }).eq('id', deal.id);
-  alert(`Deal linked to "${match.name}"!`);
-  loadDealsFromSupabase();
+  const activeClients = state.clients.filter(c => c.is_active);
+  const chosenId = await colonyChoice('Choose the client to link this deal to:', {
+    title: 'Link deal to client',
+    choices: activeClients.map(c => ({ label: c.name, value: c.id }))
+  });
+  if (!chosenId) return;
+  const match = activeClients.find(c => c.id === chosenId);
+  if (!match) return;
+  const linkRes2 = await state.supabase.from('deals').update({ client_id: match.id }).eq('id', deal.id);
+  if (linkRes2.error) { await colonyAlert('Failed to link deal: ' + linkRes2.error.message, { title: 'Deal Flow' }); }
+  else { await colonyAlert(`Deal linked to "${match.name}"!`, { title: 'Deal Flow' }); }
+  await loadDealsFromSupabase();
 }
 
 // ── List view ──
@@ -11474,8 +14320,8 @@ function renderDealListView(deals) {
     let va = a[dealSortCol] || '';
     let vb = b[dealSortCol] || '';
     if (dealSortCol === 'poc') {
-      const ea = state.employeeDirectory.find(e => e.id === a.poc_employee_id);
-      const eb = state.employeeDirectory.find(e => e.id === b.poc_employee_id);
+      const ea = lookupEmployee(a.poc_employee_id);
+      const eb = lookupEmployee(b.poc_employee_id);
       va = ea?.full_name || '';
       vb = eb?.full_name || '';
     }
@@ -11487,122 +14333,68 @@ function renderDealListView(deals) {
   });
 
   dealListBody.innerHTML = sorted.map(d => {
-    const poc = d.poc_employee_id ? state.employeeDirectory.find(e => e.id === d.poc_employee_id) : null;
+    const poc = lookupEmployee(d.poc_employee_id);
     const deadlineClass = getDealDeadlineClass(d.deadline);
     return `<tr class="deal-list-row" data-deal-id="${d.id}">
       <td class="deal-td-name">${escapeHtml(d.deal_name)}</td>
-      <td><span class="deal-stage-pill deal-stage-${d.stage}">${DEAL_STAGE_LABEL[d.stage] || d.stage}</span></td>
+      <td><span class="deal-stage-pill deal-stage-${d.stage}">${escapeHtml(DEAL_STAGE_LABEL[d.stage] || d.stage)}</span></td>
       <td>${poc ? escapeHtml(poc.full_name) : '—'}</td>
       <td class="deal-td-next">${d.next_steps ? escapeHtml(d.next_steps).slice(0, 50) : ''}</td>
       <td class="${deadlineClass}">${d.deadline ? formatDealDate(d.deadline) : ''}</td>
-      <td>${d.engagement_type || ''}</td>
-      <td>${d.business_model || ''}</td>
+      <td>${escapeHtml(d.engagement_type || '')}</td>
+      <td>${escapeHtml(d.business_model || '')}</td>
       <td>${d.updated_at ? formatDealDate(d.updated_at.slice(0, 10)) : ''}</td>
     </tr>`;
   }).join('');
 }
 
 // ── Contracted list with Active / Archived grouping ──
-function renderContractedListView(deals) {
-  if (!dealListHead || !dealListBody) return;
+// Partition contracted deals into active (linked to a live client) vs archived
+// (no active-client link) + archived clients that have no deal row. Shared by
+// the Active/Archived stat cards and views so counts always match what's shown.
+function partitionContractedDeals(deals) {
   const EXCLUDED_CLIENTS_LC = ['internal', 'misc', 'pitches/bd'];
   const allClients = (state.clients || []).filter(c => !EXCLUDED_CLIENTS_LC.includes(c.name.toLowerCase()));
   const activeClientIds = new Set(allClients.filter(c => c.is_active).map(c => c.id));
-  const active = deals.filter(d => d.client_id && activeClientIds.has(d.client_id));
-  const archivedDeals = deals.filter(d => !d.client_id || !activeClientIds.has(d.client_id));
-
-  // Also include archived clients from Clients module that have no deal entry
-  const dealClientIds = new Set(deals.map(d => d.client_id).filter(Boolean));
+  const contracted = (deals || []).filter(d => d.stage === 'contracted');
+  const active = contracted.filter(d => d.client_id && activeClientIds.has(d.client_id));
+  const archivedDeals = contracted.filter(d => !d.client_id || !activeClientIds.has(d.client_id));
+  const dealClientIds = new Set(contracted.map(d => d.client_id).filter(Boolean));
   const archivedClientsWithoutDeals = allClients
     .filter(c => !c.is_active && !dealClientIds.has(c.id))
     .map(c => ({ deal_name: c.name, engagement_type: c.type, business_model: '', updated_at: c.updated_at, _isClientOnly: true }));
-  const archived = [...archivedDeals, ...archivedClientsWithoutDeals];
+  return { active, archived: [...archivedDeals, ...archivedClientsWithoutDeals] };
+}
 
+// which = 'active' | 'archived'
+function renderContractedListView(deals, which) {
+  if (!dealListHead || !dealListBody) return;
+  const { active, archived } = partitionContractedDeals(deals);
+  const list = which === 'archived' ? archived : active;
   const cols = ['Deal', 'POC', 'Type', 'Model', 'Updated'];
   dealListHead.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
 
   function rowsHtml(list) {
     return list.map(d => {
-      const poc = d.poc_employee_id ? state.employeeDirectory.find(e => e.id === d.poc_employee_id) : null;
+      const poc = lookupEmployee(d.poc_employee_id);
       return `<tr class="deal-list-row" data-deal-id="${d.id}">
         <td class="deal-td-name">${escapeHtml(d.deal_name)}</td>
         <td>${poc ? escapeHtml(poc.full_name) : '—'}</td>
-        <td>${d.engagement_type || ''}</td>
-        <td>${d.business_model || ''}</td>
+        <td>${escapeHtml(d.engagement_type || '')}</td>
+        <td>${escapeHtml(d.business_model || '')}</td>
         <td>${d.updated_at ? formatDealDate(d.updated_at.slice(0, 10)) : ''}</td>
       </tr>`;
     }).join('');
   }
 
-  let html = '';
-  if (active.length) {
-    html += `<tr class="deal-group-header"><td colspan="${cols.length}">Active Clients (${active.length})</td></tr>`;
-    html += rowsHtml(active);
-  }
-  if (archived.length) {
-    html += `<tr class="deal-group-header deal-group-collapsible" data-group="archived"><td colspan="${cols.length}"><span class="deal-group-arrow">▶</span> Archived (${archived.length})</td></tr>`;
-    html += rowsHtml(archived).replace(/<tr /g, '<tr data-group-row="archived" style="display:none" ');
-  }
-  if (!html) {
-    html = `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--text-2)">No contracted deals</td></tr>`;
-  }
-  dealListBody.innerHTML = html;
-
-  // Collapsible archived section
-  dealListBody.querySelectorAll('.deal-group-collapsible').forEach(header => {
-    header.addEventListener('click', () => {
-      const group = header.dataset.group;
-      const rows = dealListBody.querySelectorAll(`[data-group-row="${group}"]`);
-      const arrow = header.querySelector('.deal-group-arrow');
-      const isOpen = rows[0]?.style.display !== 'none';
-      rows.forEach(r => r.style.display = isOpen ? 'none' : '');
-      if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
-    });
-  });
+  const emptyMsg = which === 'archived' ? 'No archived clients' : 'No active clients';
+  dealListBody.innerHTML = list.length
+    ? rowsHtml(list)
+    : `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--text-2)">${emptyMsg}</td></tr>`;
 }
 
 // ── Section tables (Active / Cold / Completed) ──
-function renderDealSectionTable(section) {
-  if (!dealSectionHead || !dealSectionBody) return;
-  let deals = state.deals.filter(d => d.section === section);
-
-  if (section === 'active') {
-    // Pull active clients from the Clients module (same data as sidebar Clients)
-    const activeClients = state.clients.filter(c => c.is_active);
-    dealSectionHead.innerHTML = '<tr><th>Client</th><th>Type</th><th>Owner</th><th>Status</th></tr>';
-    dealSectionBody.innerHTML = activeClients.map(c => {
-      return `<tr>
-        <td class="deal-td-name">${escapeHtml(c.name)}</td>
-        <td>${escapeHtml(c.type || '—')}</td>
-        <td>${c.owner_full_name ? escapeHtml(c.owner_full_name) : '—'}</td>
-        <td>${escapeHtml(c.status || 'Active')}</td>
-      </tr>`;
-    }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-2)">No active clients</td></tr>';
-  } else if (section === 'cold') {
-    dealSectionHead.innerHTML = '<tr><th>Deal</th><th>Stage</th><th>POC</th><th>Last Updated</th><th></th></tr>';
-    dealSectionBody.innerHTML = deals.map(d => {
-      const poc = d.poc_employee_id ? state.employeeDirectory.find(e => e.id === d.poc_employee_id) : null;
-      return `<tr class="deal-list-row" data-deal-id="${d.id}">
-        <td class="deal-td-name">${escapeHtml(d.deal_name)}</td>
-        <td><span class="deal-stage-pill deal-stage-${d.stage}">${DEAL_STAGE_LABEL[d.stage] || d.stage}</span></td>
-        <td>${poc ? escapeHtml(poc.full_name) : '—'}</td>
-        <td>${d.updated_at ? formatDealDate(d.updated_at.slice(0, 10)) : ''}</td>
-        <td>${isLeadershipRole() ? `<button class="ghost small deal-revive-btn" data-deal-id="${d.id}" type="button">Revive</button>` : ''}</td>
-      </tr>`;
-    }).join('');
-  } else if (section === 'completed') {
-    dealSectionHead.innerHTML = '<tr><th>Client</th><th>Engagement Type</th><th>Business Model</th><th>Termination</th></tr>';
-    dealSectionBody.innerHTML = deals.map(d => {
-      const termClass = d.termination_type === 'Good Termination' ? 'deal-badge-good' : d.termination_type === 'Bad Termination' ? 'deal-badge-bad' : '';
-      return `<tr class="deal-list-row" data-deal-id="${d.id}">
-        <td class="deal-td-name">${escapeHtml(d.deal_name)}</td>
-        <td>${d.engagement_type || '—'}</td>
-        <td>${d.business_model || '—'}</td>
-        <td>${d.termination_type ? `<span class="deal-badge ${termClass}">${escapeHtml(d.termination_type)}</span>` : '—'}</td>
-      </tr>`;
-    }).join('');
-  }
-}
+// (renderDealSectionTable removed — it fed the hidden dealSectionTableWrap and read the dropped section column.)
 
 // ── Deal detail panel ──
 function openDealDetail(dealId) {
@@ -11611,7 +14403,7 @@ function openDealDetail(dealId) {
   const canEdit = isLeadershipRole() || isDealFlowViewer() || deal.poc_employee_id === state.currentEmployeeId;
   const canDelete = isLeadershipRole() || isDealFlowViewer();
 
-  const poc = deal.poc_employee_id ? state.employeeDirectory.find(e => e.id === deal.poc_employee_id) : null;
+  const poc = lookupEmployee(deal.poc_employee_id);
   const client = deal.client_id ? state.clients.find(c => c.id === deal.client_id) : null;
   const stageOptions = DEAL_STAGES.map(s => `<option value="${s.key}"${deal.stage === s.key ? ' selected' : ''}>${s.label}</option>`).join('');
   const pocOptions = '<option value="">—</option>' + getDealPocEmployees().map(e => `<option value="${e.id}"${deal.poc_employee_id === e.id ? ' selected' : ''}>${escapeHtml(e.full_name)}</option>`).join('');
@@ -11644,7 +14436,7 @@ function openDealDetail(dealId) {
 
       <div class="deal-detail-row">
         <div class="deal-detail-half">
-          <label>Deadline</label>
+          <label>Next Deadline</label>
           <input type="date" class="deal-field" data-field="deadline" value="${deal.deadline || ''}"${readonlyAttr} />
         </div>
         <div class="deal-detail-half">
@@ -11690,13 +14482,13 @@ function openDealDetail(dealId) {
           <label>Brand</label>
           <select class="deal-field" data-field="company"${readonlyAttr}>
             <option value="Your Agency"${(deal.company || 'Your Agency') === 'Your Agency' ? ' selected' : ''}>Your Agency</option>
-            <option value="Brand 2"${deal.company === 'Brand 2' ? ' selected' : ''}>Brand 2</option>
-            <option value="Brand 3"${deal.company === 'Brand 3' ? ' selected' : ''}>Brand 3</option>
+            <option value="Varta"${deal.company === 'Varta' ? ' selected' : ''}>Varta</option>
+            <option value="Sample Client"${deal.company === 'Sample Client' ? ' selected' : ''}>Sample Client</option>
           </select>
         </div>
       </div>
 
-      ${deal.section === 'active' ? `
+      ${deal.stage === 'contracted' ? `
       <label>Termination Type</label>
       <select class="deal-field" data-field="termination_type"${readonlyAttr}>
         <option value="">— Active —</option>
@@ -11761,12 +14553,12 @@ async function loadDealActivity(dealId) {
     return;
   }
   logEl.innerHTML = data.map(entry => {
-    const emp = entry.changed_by ? state.employeeDirectory.find(e => e.id === entry.changed_by) : null;
+    const emp = lookupEmployee(entry.changed_by);
     const who = emp ? escapeHtml(emp.full_name) : 'System';
     const when = new Date(entry.entered_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const stageLabel = DEAL_STAGE_LABEL[entry.stage] || entry.stage;
     return `<div class="deal-activity-entry">
-      <span>${escapeHtml(who)} moved to <strong>${stageLabel}</strong></span>
+      <span>${who} moved to <strong>${escapeHtml(stageLabel)}</strong></span>
       <span class="deal-activity-meta">${when}</span>
     </div>`;
   }).join('');
@@ -11790,30 +14582,43 @@ async function saveDealFromPanel() {
   const stageChanged = deal && updates.stage && updates.stage !== deal.stage;
   const oldStage = deal?.stage;
 
-  // If stage changes to a closing stage, update section too
-  if (updates.stage === 'contracted') updates.section = 'active';
-  else if (updates.stage === 'closedlost' || updates.stage === 'stalled') updates.section = 'cold';
-  else if (DEAL_OPEN_STAGES.includes(updates.stage)) updates.section = 'hot';
-
-  // If termination type set to Good/Bad, move to completed
-  if (updates.termination_type === 'Good Termination' || updates.termination_type === 'Bad Termination') {
-    updates.section = 'completed';
-  }
-
-  // Contracted deals MUST have a linked client
+  // Contracted deals MUST have a linked client — offer to create one
   if (updates.stage === 'contracted' && !updates.client_id) {
-    alert('Please link this deal to a client before marking it as Contracted.');
-    return;
+    const create = await colonyConfirm(`No linked client. Create "${deal.deal_name}" as a new client?`);
+    if (!create) return;
+    const ownerId = deal.poc_employee_id || state.currentEmployeeId || null;
+    const { data: newClient, error: clientErr } = await state.supabase
+      .from('clients')
+      .insert({ name: deal.deal_name, account_owner_employee_id: ownerId, is_active: true })
+      .select().single();
+    if (clientErr) {
+      colonyAlert('Failed to create client: ' + clientErr.message);
+      return;
+    }
+    // Create default project so team can allocate to this client
+    const engType = (deal.engagement_type || '').toLowerCase() === 'retainer' ? 'retainer' : 'project';
+    await state.supabase.from('projects').insert({
+      client_id: newClient.id,
+      name: deal.deal_name,
+      engagement_type: engType,
+      status: 'active',
+      owner_employee_id: ownerId
+    });
+    updates.client_id = newClient.id;
+    await loadClientsFromSupabase();
   }
 
   const { error } = await state.supabase.from('deals').update(updates).eq('id', dealId);
   if (error) {
     console.error('Deal save failed:', error.message);
-    alert('Save failed: ' + error.message);
+    colonyAlert('Save failed: ' + error.message);
     return;
   }
 
   if (stageChanged) {
+    if (updates.stage === 'contracted') {
+      notifyClientStatusChange('deal_contracted', { dealId });
+    }
     await state.supabase.from('deal_stage_history').insert({
       deal_id: dealId,
       stage: updates.stage,
@@ -11871,7 +14676,7 @@ function openNewDealForm() {
 
       <div class="deal-detail-row">
         <div class="deal-detail-half">
-          <label>Deadline</label>
+          <label>Next Deadline</label>
           <input type="date" id="newDealDeadline" />
         </div>
         <div class="deal-detail-half">
@@ -11920,7 +14725,7 @@ function openNewDealForm() {
 
 async function createNewDeal() {
   const name = document.getElementById('newDealName')?.value.trim();
-  if (!name) { alert('Deal name is required.'); return; }
+  if (!name) { colonyAlert('Deal name is required.'); return; }
 
   const stage = document.getElementById('newDealStage')?.value || 'qualified';
   const poc = document.getElementById('newDealPoc')?.value || null;
@@ -11932,44 +14737,50 @@ async function createNewDeal() {
   const amount = amountRaw ? parseFloat(amountRaw) : null;
   const currency = document.getElementById('newDealCurrency')?.value || 'INR';
 
-  const { data, error } = await state.supabase
-    .from('deals')
-    .insert({
-      deal_name: name,
+  try {
+    const { data, error } = await state.supabase
+      .from('deals')
+      .insert({
+        deal_name: name,
+        stage: stage,
+        poc_employee_id: poc,
+        next_steps: nextSteps,
+        deadline: deadline,
+        engagement_type: engType,
+        business_model: bizModel,
+        amount: amount,
+        currency: currency,
+        section: 'hot',
+        company: state.dealCompany
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Create deal failed:', error.message);
+      colonyAlert('Failed to create deal: ' + error.message);
+      return;
+    }
+
+    // Log initial stage
+    const histRes = await state.supabase.from('deal_stage_history').insert({
+      deal_id: data.id,
       stage: stage,
-      poc_employee_id: poc,
-      next_steps: nextSteps,
-      deadline: deadline,
-      engagement_type: engType,
-      business_model: bizModel,
-      amount: amount,
-      currency: currency,
-      section: 'hot',
-      company: state.dealCompany
-    })
-    .select()
-    .single();
+      changed_by: state.currentEmployeeId
+    });
+    if (histRes.error) console.warn('Stage history insert failed:', histRes.error.message);
 
-  if (error) {
-    console.error('Create deal failed:', error.message);
-    alert('Failed to create deal: ' + error.message);
-    return;
+    closeDealDetail();
+    await loadDealsFromSupabase();
+  } catch (err) {
+    console.error('Create deal error:', err);
+    colonyAlert('Failed to create deal: ' + err.message);
   }
-
-  // Log initial stage
-  await state.supabase.from('deal_stage_history').insert({
-    deal_id: data.id,
-    stage: stage,
-    changed_by: state.currentEmployeeId
-  });
-
-  closeDealDetail();
-  await loadDealsFromSupabase();
 }
 
 // ── Delete deal ──
 async function deleteDeal(dealId) {
-  if (!confirm('Delete this deal permanently?')) return;
+  if (!await colonyConfirm('Delete this deal permanently?', { title: 'Delete deal', confirmLabel: 'Delete', danger: true })) return;
   const { error } = await state.supabase.from('deals').delete().eq('id', dealId);
   if (error) {
     console.error('Delete failed:', error.message);
@@ -11981,21 +14792,22 @@ async function deleteDeal(dealId) {
 
 // ── Revive cold deal ──
 async function reviveDeal(dealId) {
-  const stage = prompt('Which stage should this deal move to?\n\nOptions: qualified, pitch, proposal, negotiated');
-  if (!stage || !DEAL_OPEN_STAGES.includes(stage)) {
-    if (stage) alert('Invalid stage. Use: qualified, pitch, proposal, or negotiated');
-    return;
-  }
+  const stage = await colonyChoice('Which stage should this deal move to?', {
+    title: 'Revive deal',
+    choices: DEAL_OPEN_STAGES.map(s => ({ label: DEAL_STAGE_LABEL[s] || s, value: s }))
+  });
+  if (!stage || !DEAL_OPEN_STAGES.includes(stage)) return;
   const { error } = await state.supabase.from('deals').update({ stage, section: 'hot' }).eq('id', dealId);
   if (error) {
     console.error('Revive failed:', error.message);
     return;
   }
-  await state.supabase.from('deal_stage_history').insert({
+  const reviveHist = await state.supabase.from('deal_stage_history').insert({
     deal_id: dealId,
     stage,
     changed_by: state.currentEmployeeId
   });
+  if (reviveHist.error) console.error('Revive stage history failed:', reviveHist.error.message);
   await loadDealsFromSupabase();
 }
 
@@ -12126,7 +14938,1289 @@ document.addEventListener('click', (e) => {
 
 // ── End Deal Flow ──────────────────────────────────────────────────────
 
+// ══════════════════════════════════════════════════════════════════════
+// ── Executive Dashboard ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════
+
+async function loadExecutiveDashboard() {
+  if (!state.supabase || !state.isAuthenticated || !isLeadershipRole()) return;
+
+  const todayIso = toISODateLocal();
+  const weekStart = getCurrentWeekStartIso();
+  const twoWeeksOut = toISODateLocal(new Date(Date.now() + 14 * 86400000));
+
+  // Ensure base state is loaded
+  const ensureLoads = [];
+  if (!state.employeeDirectory.length) ensureLoads.push(loadEmployeeDirectoryFromSupabase());
+  if (!state.clients.length) ensureLoads.push(loadClientsFromSupabase());
+  if (!state.deals.length) ensureLoads.push(loadDealsFromSupabase());
+  if (ensureLoads.length) await Promise.all(ensureLoads);
+
+  // Parallel dashboard-specific queries
+  const [allocResult, leaveResult, tasksResult, onboardingResult] = await Promise.all([
+    state.supabase
+      .from('allocations')
+      .select(`
+        employee_id,
+        allocation_percent,
+        project:projects!allocations_project_id_fkey (
+          name,
+          client:clients!projects_client_id_fkey ( name )
+        )
+      `)
+      .eq('period_type', 'week')
+      .eq('period_start', weekStart)
+      .limit(2000),
+
+    state.supabase
+      .from('leave_requests')
+      .select(`
+        id, employee_id, leave_type, start_date, end_date, status,
+        employee:employees!leave_requests_employee_id_fkey ( full_name )
+      `)
+      .eq('status', 'approved')
+      .lte('start_date', twoWeeksOut)
+      .gte('end_date', todayIso)
+      .limit(2000),
+
+    state.supabase
+      .from('daily_tasks')
+      .select('employee_id, status')
+      .eq('task_date', todayIso)
+      .neq('status', 'archived')
+      .limit(2000),
+
+    state.supabase
+      .from('onboarding_checklists')
+      .select(`
+        id, employee_id, status, created_at,
+        items:onboarding_checklist_items ( phase, is_completed )
+      `)
+      .eq('status', 'active')
+      .limit(2000)
+  ]);
+
+  const activeEmployees = state.employeeDirectory.filter(e => e.is_active && !getHiddenEmployeeEmails().includes(normalizeEmail(e.email)));
+  const allocations = allocResult.data || [];
+  const leaveRows = leaveResult.data || [];
+  const todayTasks = tasksResult.data || [];
+  const activeOnboarding = (onboardingResult.data || []).map(ob => {
+    const emp = activeEmployees.find(e => e.id === ob.employee_id);
+    return { ...ob, employee: emp || null };
+  });
+
+  // Build per-employee allocation map
+  const allocByEmployee = new Map();
+  allocations.forEach(a => {
+    const entry = allocByEmployee.get(a.employee_id) || { total: 0, clients: [] };
+    entry.total += (a.allocation_percent || 0);
+    const clientName = a.project?.client?.name;
+    if (clientName && normalizeClientNameKey(clientName) !== 'internal' && !entry.clients.includes(clientName)) entry.clients.push(clientName);
+    allocByEmployee.set(a.employee_id, entry);
+  });
+
+  renderExecKpis(activeEmployees, allocByEmployee, state.clients, state.deals, activeOnboarding);
+  renderExecAllocation(activeEmployees, allocByEmployee);
+  renderExecPipeline(state.deals);
+  renderExecWhosOut(leaveRows, todayIso);
+  renderExecActivity(activeEmployees, todayTasks, leaveRows, todayIso);
+  renderExecClients(state.clients, allocations);
+  renderExecOnboarding(activeOnboarding);
+}
+
+// ── KPI Cards ──
+
+function renderExecKpis(employees, allocByEmployee, clients, deals, onboarding) {
+  const grid = document.getElementById('execKpiGrid');
+  if (!grid) return;
+
+  const onboardingCount = onboarding.length;
+  const activeClients = clients.filter(c => c.is_active);
+  const openDeals = deals.filter(d => DEAL_OPEN_STAGES.includes(d.stage));
+
+  // Utilization
+  let totalAlloc = 0, allocCount = 0, overloaded = 0, available = 0;
+  employees.forEach(e => {
+    const alloc = allocByEmployee.get(e.id)?.total || 0;
+    totalAlloc += alloc;
+    allocCount++;
+    if (alloc > 100) overloaded++;
+    else if (alloc < 70) available++;
+  });
+  const avgUtil = allocCount ? Math.round(totalAlloc / allocCount) : 0;
+
+  // Client breakdown
+  const typeCount = {};
+  activeClients.forEach(c => {
+    const type = c.type || 'project';
+    typeCount[type] = (typeCount[type] || 0) + 1;
+  });
+  const clientContext = Object.entries(typeCount).map(([t, n]) => `${n} ${t}`).join(' · ');
+
+  // Pipeline — most advanced stage
+  const stageOrder = ['negotiated', 'proposal', 'discovery', 'qualified'];
+  let topStage = '';
+  for (const s of stageOrder) {
+    const c = openDeals.filter(d => d.stage === s).length;
+    if (c) { topStage = `${c} ${DEAL_STAGE_LABEL[s] || s}`.toLowerCase(); break; }
+  }
+
+  const cards = [
+    { label: 'TEAM', value: employees.length, context: onboardingCount ? `${onboardingCount} onboarding` : '' },
+    { label: 'AVG UTILIZATION', value: avgUtil + '%', context: `${overloaded} overloaded · ${available} available` },
+    { label: 'ACTIVE CLIENTS', value: activeClients.length, context: clientContext },
+    { label: 'PIPELINE', value: openDeals.length, context: topStage },
+  ];
+
+  grid.innerHTML = cards.map(c => `
+    <div class="kpi-card">
+      <p>${c.label}</p>
+      <h3>${c.value}</h3>
+      <small>${c.context}</small>
+    </div>
+  `).join('');
+}
+
+// ── Team Allocation Card ──
+
+function renderExecAllocation(employees, allocByEmployee) {
+  const list = document.getElementById('execAllocList');
+  const toggle = document.getElementById('execAllocToggle');
+  if (!list) return;
+
+  const rows = employees.map(e => ({
+    name: displayPersonName(e.full_name, 'Employee'),
+    dept: normalizeTeamName(e.department?.name || '', ''),
+    alloc: allocByEmployee.get(e.id)?.total || 0,
+    clients: allocByEmployee.get(e.id)?.clients || [],
+  }));
+
+  // Group by department, sort departments by highest allocation, within each dept sort by alloc desc
+  const deptMap = new Map();
+  rows.forEach(r => {
+    if (!deptMap.has(r.dept)) deptMap.set(r.dept, []);
+    deptMap.get(r.dept).push(r);
+  });
+  deptMap.forEach(members => members.sort((a, b) => b.alloc - a.alloc));
+  const deptOrder = [...deptMap.entries()].sort((a, b) => {
+    const maxA = Math.max(...a[1].map(r => r.alloc));
+    const maxB = Math.max(...b[1].map(r => r.alloc));
+    return maxB - maxA;
+  });
+
+  let html = '';
+  deptOrder.forEach(([dept, members]) => {
+    html += `<div class="exec-alloc-group">`;
+    html += `<div class="exec-alloc-dept">${escapeHtml(dept || 'Other')}</div>`;
+    html += members.map(r => {
+      const pct = Math.min(r.alloc, 120);
+      const color = r.alloc > 100 ? 'var(--bad)' : r.alloc >= 90 ? 'var(--warn)' : 'var(--good)';
+      return `
+        <div class="exec-alloc-row">
+          <span class="exec-alloc-name">${escapeHtml(r.name)}</span>
+          <div class="audience-bar" style="flex:1">
+            <div class="audience-bar-fill" style="width:${pct}%;background:${color}"></div>
+          </div>
+          <span class="exec-alloc-pct" style="color:${color}">${r.alloc}%</span>
+          <span class="exec-clients-mini">${escapeHtml(r.clients.join(', '))}</span>
+        </div>`;
+    }).join('');
+    html += `</div>`;
+  });
+  list.innerHTML = html;
+
+  if (toggle) {
+    toggle.style.display = 'none';
+  }
+}
+
+// ── Pipeline Card ──
+
+function renderExecPipeline(deals) {
+  const card = document.getElementById('execPipelineCard');
+  if (!card) return;
+
+  const openDeals = deals.filter(d => DEAL_OPEN_STAGES.includes(d.stage));
+  const stageCounts = {};
+  DEAL_OPEN_STAGES.forEach(s => { stageCounts[s] = 0; });
+  openDeals.forEach(d => { stageCounts[d.stage] = (stageCounts[d.stage] || 0) + 1; });
+
+  const stageBoxes = DEAL_OPEN_STAGES.map(s => {
+    const count = stageCounts[s];
+    const muted = count === 0 ? ' style="opacity:0.35"' : '';
+    return `<div class="exec-stage-box"${muted}>
+      <div class="exec-stage-count">${count}</div>
+      <div class="exec-stage-label">${escapeHtml(DEAL_STAGE_LABEL[s] || s)}</div>
+    </div>`;
+  }).join('');
+
+  const dealRows = openDeals.sort((a, b) => {
+    return DEAL_OPEN_STAGES.indexOf(b.stage) - DEAL_OPEN_STAGES.indexOf(a.stage);
+  }).slice(0, 8).map(d => {
+    const days = Math.floor((Date.now() - new Date(d.created_at).getTime()) / 86400000);
+    const amt = d.amount ? (d.currency === 'USD' ? '$' : '₹') + Number(d.amount).toLocaleString('en-IN') : '';
+    return `<div class="exec-deal-row">
+      <span>${escapeHtml(d.deal_name || d.company || '—')}</span>
+      <span>${amt}</span>
+      <span class="chip info">${escapeHtml(DEAL_STAGE_LABEL[d.stage] || d.stage)}</span>
+      <span class="exec-deal-days">${days}d</span>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="exec-card-header"><h3>Pipeline</h3><small style="color:rgba(var(--text-rgb),0.4)">From Deal Flow</small></div>
+    <div class="exec-stage-grid">${stageBoxes}</div>
+    ${dealRows || '<p style="color:rgba(var(--text-rgb),0.4);font-size:0.8rem">No open deals</p>'}
+  `;
+}
+
+// ── Who's Out Card ──
+
+function renderExecWhosOut(leaveRows, todayIso) {
+  const card = document.getElementById('execWhosOutCard');
+  if (!card) return;
+
+  const today = new Date(todayIso);
+  const weekEnd = new Date(today);
+  weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay() || 7));
+  const weekEndIso = toISODateLocal(weekEnd);
+
+  const current = leaveRows.filter(l => l.start_date <= todayIso && l.end_date >= todayIso);
+  const upcoming = leaveRows.filter(l => l.start_date > todayIso);
+
+  function leaveTypeClass(t) {
+    if (t === 'PL') return 'good';
+    if (t === 'SL') return 'warn';
+    return 'info';
+  }
+
+  function initials(name) {
+    return (name || '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  }
+
+  function renderLeaveRow(l, muted) {
+    const name = displayPersonName(l.employee?.full_name || '', '—');
+    const cls = muted ? ' exec-muted' : '';
+    return `<div class="exec-activity-row${cls}">
+      <div class="exec-initials">${initials(l.employee?.full_name || '')}</div>
+      <span style="flex:1">${escapeHtml(name)}</span>
+      <span style="font-size:0.75rem;color:rgba(var(--text-rgb),0.5)">${formatDateForLabel(l.start_date)} – ${formatDateForLabel(l.end_date)}</span>
+      <span class="chip ${leaveTypeClass(l.leave_type)}">${l.leave_type}</span>
+    </div>`;
+  }
+
+  const currentHtml = current.length
+    ? `<div style="margin-bottom:var(--space-2)"><small style="font-weight:600;color:rgba(var(--text-rgb),0.5)">This week</small>${current.map(l => renderLeaveRow(l, false)).join('')}</div>`
+    : '';
+  const upcomingHtml = upcoming.length
+    ? `<div><small style="font-weight:600;color:rgba(var(--text-rgb),0.5)">Coming up</small>${upcoming.map(l => renderLeaveRow(l, true)).join('')}</div>`
+    : '';
+
+  card.innerHTML = `
+    <div class="exec-card-header"><h3>Who's Out</h3><small style="color:rgba(var(--text-rgb),0.4)">From My Leave</small></div>
+    ${currentHtml || upcomingHtml
+      ? currentHtml + upcomingHtml
+      : '<p style="color:rgba(var(--text-rgb),0.4);font-size:0.8rem">No one\'s out</p>'}
+  `;
+}
+
+// ── Today's Activity Card ──
+
+function renderExecActivity(employees, todayTasks, leaveRows, todayIso) {
+  const card = document.getElementById('execActivityCard');
+  if (!card) return;
+
+  const tasksByEmployee = new Map();
+  todayTasks.forEach(t => {
+    tasksByEmployee.set(t.employee_id, (tasksByEmployee.get(t.employee_id) || 0) + 1);
+  });
+
+  const onLeaveIds = new Set();
+  leaveRows.forEach(l => {
+    if (l.start_date <= todayIso && l.end_date >= todayIso) onLeaveIds.add(l.employee_id);
+  });
+
+  const rows = employees.map(e => {
+    const tasks = tasksByEmployee.get(e.id) || 0;
+    const onLeave = onLeaveIds.has(e.id);
+    let status, icon, sortKey;
+    if (tasks > 0) {
+      status = `${tasks} task${tasks > 1 ? 's' : ''}`;
+      icon = '<span style="color:var(--good)">✓</span>';
+      sortKey = 0;
+    } else if (onLeave) {
+      status = 'On leave';
+      icon = '<span style="color:var(--warn)">◑</span>';
+      sortKey = 1;
+    } else {
+      status = 'No tasks';
+      icon = '<span style="color:rgba(var(--text-rgb),0.25)">–</span>';
+      sortKey = 2;
+    }
+    return { name: displayPersonName(e.full_name, 'Employee'), status, icon, sortKey };
+  }).sort((a, b) => a.sortKey - b.sortKey);
+
+  card.innerHTML = `
+    <div class="exec-card-header"><h3>Today's Activity</h3><small style="color:rgba(var(--text-rgb),0.4)">Tasks logged in My Work</small></div>
+    ${rows.map(r => `<div class="exec-activity-row">
+      <span class="exec-activity-icon">${r.icon}</span>
+      <span style="flex:1">${escapeHtml(r.name)}</span>
+      <span style="font-size:0.75rem;color:rgba(var(--text-rgb),0.5)">${r.status}</span>
+    </div>`).join('')}
+  `;
+}
+
+// ── Clients Card ──
+
+function renderExecClients(clients, allocations) {
+  const card = document.getElementById('execClientsCard');
+  if (!card) return;
+
+  const activeClients = clients.filter(c => c.is_active);
+
+  // Count team members per client from allocations
+  const teamByClient = new Map();
+  allocations.forEach(a => {
+    const clientName = a.project?.client?.name;
+    if (!clientName) return;
+    const set = teamByClient.get(clientName) || new Set();
+    set.add(a.employee_id);
+    teamByClient.set(clientName, set);
+  });
+
+  const rows = activeClients.map(c => {
+    const team = teamByClient.get(c.name)?.size || 0;
+    const type = c.type || 'project';
+    return { name: c.name, team, type };
+  }).sort((a, b) => b.team - a.team);
+
+  card.innerHTML = `
+    <div class="exec-card-header"><h3>Clients</h3><small style="color:rgba(var(--text-rgb),0.4)">Active engagements</small></div>
+    ${rows.length ? rows.map(r => `<div class="exec-activity-row">
+      <span style="flex:1;font-weight:500">${escapeHtml(r.name)}</span>
+      <span style="font-size:0.75rem;color:rgba(var(--text-rgb),0.5)">${r.team} member${r.team !== 1 ? 's' : ''}</span>
+      <span class="chip info">${r.type}</span>
+    </div>`).join('') : '<p style="color:rgba(var(--text-rgb),0.4);font-size:0.8rem">No active clients</p>'}
+  `;
+}
+
+// ── Onboarding Card ──
+
+function renderExecOnboarding(activeOnboarding) {
+  const card = document.getElementById('execOnboardingCard');
+  if (!card) return;
+
+  const badge = activeOnboarding.length
+    ? `<span class="chip info" style="margin-left:8px">${activeOnboarding.length} active</span>`
+    : '';
+
+  if (!activeOnboarding.length) {
+    card.innerHTML = `
+      <div class="exec-card-header"><h3>Onboarding${badge}</h3><small style="color:rgba(var(--text-rgb),0.4)">From Team Directory</small></div>
+      <p style="color:rgba(var(--text-rgb),0.4);font-size:0.8rem">No active onboarding</p>
+    `;
+    return;
+  }
+
+  const phases = ['pre_joining', 'day_one', 'week_one', 'month_one'];
+  const phaseLabels = { pre_joining: 'Pre-Joining', day_one: 'Day 1', week_one: 'Week 1', month_one: 'Month 1' };
+
+  const entries = activeOnboarding.map(ob => {
+    const items = ob.items || [];
+    const total = items.length;
+    const done = items.filter(i => i.is_completed).length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const name = displayPersonName(ob.employee?.full_name || '', '—');
+    const dept = ob.employee?.department?.name || '';
+
+    const phaseBreak = phases.map(p => {
+      const phaseItems = items.filter(i => i.phase === p);
+      const pDone = phaseItems.filter(i => i.is_completed).length;
+      return phaseItems.length ? `${phaseLabels[p]}: ${pDone}/${phaseItems.length}` : '';
+    }).filter(Boolean).join(' · ');
+
+    return `<div style="padding:6px 0;border-top:1px solid rgba(var(--text-rgb),0.06)">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-weight:500">${escapeHtml(name)}</span>
+        <span style="font-size:0.75rem;color:rgba(var(--text-rgb),0.5)">${escapeHtml(dept)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <div class="audience-bar" style="flex:1;height:8px">
+          <div class="audience-bar-fill" style="width:${pct}%;background:var(--primary)"></div>
+        </div>
+        <span style="font-size:0.75rem;font-weight:600">${done}/${total}</span>
+      </div>
+      <div style="font-size:0.68rem;color:rgba(var(--text-rgb),0.4);margin-top:2px">${phaseBreak}</div>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="exec-card-header"><h3>Onboarding${badge}</h3><small style="color:rgba(var(--text-rgb),0.4)">From Team Directory</small></div>
+    ${entries}
+  `;
+}
+
+// ── End Executive Dashboard ─────────────────────────────────────────────
+
 setAuthenticatedNavigation(false);
+/* =========================================================================
+   ONBOARDING SYSTEM
+   ========================================================================= */
+
+// ---- State ----
+state.onboardingChecklists = [];   // active checklists (leadership view)
+state.policyDocuments = [];        // policy docs from DB
+let _policyQuillEditor = null;     // Quill instance for admin editor
+let _editingPolicyId = null;       // currently editing policy doc ID
+
+// ---- Notify leadership about new employee ----
+
+// ---- Policy Documents: load, render, edit (Admin Settings) ----
+
+async function loadPolicyDocuments() {
+  if (!state.supabase) return;
+  const { data, error } = await state.supabase
+    .from('policy_documents')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) { console.error('Failed to load policy docs:', error); return; }
+  state.policyDocuments = data || [];
+  renderPolicyDocsList();
+
+  // Show panel for admin
+  const panel = document.getElementById('policyDocumentsPanel');
+  if (panel && isSuperadminUser()) panel.style.display = '';
+}
+
+function renderPolicyDocsList() {
+  const container = document.getElementById('policyDocsList');
+  if (!container) return;
+  container.innerHTML = '';
+  state.policyDocuments.forEach(doc => {
+    const updatedBy = doc.last_updated_by_employee_id
+      ? lookupEmployeeName(doc.last_updated_by_employee_id, 'Unknown')
+      : '--';
+    const updatedDate = doc.updated_at ? new Date(doc.updated_at).toLocaleDateString('en-IN') : '--';
+    const row = document.createElement('div');
+    row.className = 'policy-doc-row';
+    row.innerHTML = `
+      <div>
+        <span class="policy-doc-title">${escapeHtml(doc.title)}</span>
+        <span class="policy-doc-meta">v${escapeHtml(doc.version)} &middot; Updated ${updatedDate} by ${escapeHtml(updatedBy)}</span>
+      </div>
+      <button class="ghost small" type="button">Edit</button>
+    `;
+    row.addEventListener('click', () => openPolicyEditor(doc.id));
+    container.appendChild(row);
+  });
+}
+
+function openPolicyEditor(docId) {
+  const doc = state.policyDocuments.find(d => d.id === docId);
+  if (!doc) return;
+  _editingPolicyId = docId;
+
+  const wrap = document.getElementById('policyEditorWrap');
+  const historyWrap = document.getElementById('policyHistoryWrap');
+  const titleEl = document.getElementById('policyEditorTitle');
+  const metaEl = document.getElementById('policyEditorMeta');
+  if (historyWrap) historyWrap.style.display = 'none';
+  if (wrap) wrap.style.display = '';
+  if (titleEl) titleEl.textContent = doc.title;
+  if (metaEl) metaEl.textContent = `Version ${doc.version}`;
+
+  // Initialize Quill if not done
+  const editorContainer = document.getElementById('policyEditorContainer');
+  if (!_policyQuillEditor && typeof Quill !== 'undefined') {
+    _policyQuillEditor = new Quill(editorContainer, {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          [{ header: [2, 3, false] }],
+          ['bold', 'italic', 'underline'],
+          [{ list: 'ordered' }, { list: 'bullet' }],
+          ['link'],
+          ['clean']
+        ]
+      }
+    });
+  }
+  if (_policyQuillEditor) {
+    _policyQuillEditor.root.innerHTML = doc.content_html || '';
+  }
+
+  document.getElementById('policyEditorNotice').textContent = '';
+}
+
+document.getElementById('savePolicyBtn')?.addEventListener('click', async () => {
+  if (!_editingPolicyId || !_policyQuillEditor) return;
+  const doc = state.policyDocuments.find(d => d.id === _editingPolicyId);
+  if (!doc) return;
+
+  const newHtml = _policyQuillEditor.root.innerHTML;
+  const oldVersion = doc.version || '1';
+  // Bump version: increment last number
+  const versionParts = oldVersion.split('.');
+  const lastNum = parseInt(versionParts[versionParts.length - 1] || '0', 10);
+  versionParts[versionParts.length - 1] = String(lastNum + 1);
+  const newVersion = versionParts.join('.');
+
+  const noticeEl = document.getElementById('policyEditorNotice');
+  noticeEl.textContent = 'Saving...';
+
+  // Save old version to history
+  const { error: histErr } = await state.supabase.from('policy_document_versions').insert({
+    policy_document_id: _editingPolicyId,
+    version: oldVersion,
+    content_html: doc.content_html,
+    updated_by_employee_id: doc.last_updated_by_employee_id
+  });
+  if (histErr) console.warn('Failed to save version history:', histErr);
+
+  // Update current document
+  const { error } = await state.supabase.from('policy_documents').update({
+    content_html: newHtml,
+    version: newVersion,
+    last_updated_by_employee_id: state.currentEmployeeId,
+    updated_at: new Date().toISOString()
+  }).eq('id', _editingPolicyId);
+
+  if (error) {
+    noticeEl.textContent = `Save failed: ${error.message}`;
+    noticeEl.className = 'status error';
+    return;
+  }
+
+  noticeEl.textContent = `Saved as version ${newVersion}.`;
+  noticeEl.className = 'mini-meta';
+  await loadPolicyDocuments();
+});
+
+document.getElementById('cancelPolicyBtn')?.addEventListener('click', () => {
+  document.getElementById('policyEditorWrap').style.display = 'none';
+  _editingPolicyId = null;
+});
+
+document.getElementById('viewPolicyHistoryBtn')?.addEventListener('click', async () => {
+  if (!_editingPolicyId) return;
+  const wrap = document.getElementById('policyHistoryWrap');
+  const list = document.getElementById('policyHistoryList');
+  const editorWrap = document.getElementById('policyEditorWrap');
+  if (editorWrap) editorWrap.style.display = 'none';
+  if (wrap) wrap.style.display = '';
+
+  list.innerHTML = '<p class="mini-meta">Loading...</p>';
+  const { data, error } = await state.supabase
+    .from('policy_document_versions')
+    .select('*')
+    .eq('policy_document_id', _editingPolicyId)
+    .order('created_at', { ascending: false });
+
+  if (error || !data?.length) {
+    list.innerHTML = '<p class="mini-meta">No version history yet.</p>';
+    return;
+  }
+
+  list.innerHTML = '';
+  data.forEach(v => {
+    const who = v.updated_by_employee_id
+      ? lookupEmployeeName(v.updated_by_employee_id)
+      : '--';
+    const when = new Date(v.created_at).toLocaleString('en-IN');
+    const entry = document.createElement('div');
+    entry.className = 'policy-history-entry';
+    entry.innerHTML = `
+      <div class="policy-history-meta">v${escapeHtml(v.version)} &middot; ${escapeHtml(when)} by ${escapeHtml(who)}</div>
+      <div class="policy-history-preview">${v.content_html || ''}</div>
+    `;
+    list.appendChild(entry);
+  });
+});
+
+document.getElementById('closePolicyHistoryBtn')?.addEventListener('click', () => {
+  document.getElementById('policyHistoryWrap').style.display = 'none';
+  if (_editingPolicyId) openPolicyEditor(_editingPolicyId);
+});
+
+// ---- Policy Full Page Screen ----
+
+let _policyPageQuill = null;
+let _policyPageDoc = null;
+
+async function loadPolicyPage() {
+  const policyKey = 'remote_working_policy';
+  const contentEl = document.getElementById('policyPageContent');
+  const titleEl = document.getElementById('policyPageTitle');
+  const versionEl = document.getElementById('policyPageVersion');
+  const updatedEl = document.getElementById('policyPageUpdated');
+  const editBtn = document.getElementById('policyEditBtn');
+  const editorWrap = document.getElementById('policyPageEditorWrap');
+  const historyWrap = document.getElementById('policyVersionHistory');
+
+  // Hide edit mode
+  if (editorWrap) editorWrap.style.display = 'none';
+  if (contentEl) contentEl.style.display = '';
+
+  // Fetch policy
+  let doc = state.policyDocuments.find(d => d.policy_key === policyKey);
+  if (!doc && state.supabase) {
+    const { data } = await state.supabase.from('policy_documents').select('*').eq('policy_key', policyKey).single();
+    doc = data;
+  }
+  _policyPageDoc = doc;
+
+  if (!doc) {
+    if (contentEl) contentEl.innerHTML = '<p>Policy document not found.</p>';
+    return;
+  }
+
+  if (titleEl) titleEl.textContent = doc.title;
+  if (versionEl) versionEl.textContent = 'v' + doc.version;
+  if (updatedEl) {
+    const d = new Date(doc.updated_at);
+    updatedEl.textContent = 'Last updated: ' + d.toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+  if (contentEl) {
+    // Strip leading H1 from content to avoid duplicating the page header
+    const tmp = document.createElement('div');
+    tmp.innerHTML = doc.content_html || '<p>No content yet.</p>';
+    const firstH1 = tmp.querySelector('h1:first-child');
+    if (firstH1) firstH1.remove();
+    // Strip leading "Last updated" line (already shown in page header)
+    const firstEl = tmp.firstElementChild;
+    if (firstEl && /^last\s+updated/i.test(firstEl.textContent.trim())) firstEl.remove();
+    contentEl.innerHTML = tmp.innerHTML;
+  }
+
+  // Show edit button for admin and leadership
+  const isAdmin = state.accessLevel === 'admin' || isLeadershipRole();
+  if (editBtn) editBtn.style.display = isAdmin ? '' : 'none';
+
+  // Show version history for admin
+  if (historyWrap) {
+    historyWrap.style.display = isAdmin ? '' : 'none';
+    if (isAdmin) loadPolicyVersionHistory(doc.id);
+  }
+}
+
+async function loadPolicyVersionHistory(policyDocId) {
+  const listEl = document.getElementById('policyVersionList');
+  if (!listEl || !state.supabase) return;
+
+  const { data: versions } = await state.supabase
+    .from('policy_document_versions')
+    .select('*')
+    .eq('policy_document_id', policyDocId)
+    .order('created_at', { ascending: false });
+
+  if (!versions?.length) {
+    listEl.innerHTML = '<p class="mini-meta">No previous versions yet.</p>';
+    return;
+  }
+
+  listEl.innerHTML = versions.map(v => {
+    const d = new Date(v.created_at);
+    const dateStr = d.toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+    return `<details class="policy-version-entry">
+      <summary>v${escapeHtml(v.version)} — ${dateStr}</summary>
+      <div class="policy-version-content">${v.content_html || ''}</div>
+    </details>`;
+  }).join('');
+}
+
+function enterPolicyEditMode() {
+  const contentEl = document.getElementById('policyPageContent');
+  const editorWrap = document.getElementById('policyPageEditorWrap');
+  const editBtn = document.getElementById('policyEditBtn');
+  if (!editorWrap || !_policyPageDoc) return;
+
+  contentEl.style.display = 'none';
+  editorWrap.style.display = '';
+  if (editBtn) editBtn.style.display = 'none';
+
+  // Initialize Quill if needed
+  if (!_policyPageQuill && typeof Quill !== 'undefined') {
+    document.getElementById('policyPageEditorContainer').innerHTML = '';
+    _policyPageQuill = new Quill('#policyPageEditorContainer', {
+      theme: 'snow',
+      modules: { toolbar: [
+        [{ header: [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        [{ indent: '-1' }, { indent: '+1' }],
+        ['link'],
+        ['clean']
+      ]}
+    });
+  }
+
+  if (_policyPageQuill) {
+    _policyPageQuill.root.innerHTML = _policyPageDoc.content_html || '';
+  }
+
+  document.getElementById('policyPageEditorNotice').textContent = '';
+}
+
+function exitPolicyEditMode() {
+  const contentEl = document.getElementById('policyPageContent');
+  const editorWrap = document.getElementById('policyPageEditorWrap');
+  const editBtn = document.getElementById('policyEditBtn');
+
+  if (editorWrap) editorWrap.style.display = 'none';
+  if (contentEl) contentEl.style.display = '';
+  if (editBtn) editBtn.style.display = '';
+}
+
+async function savePolicyAsNewVersion() {
+  if (!_policyPageQuill || !_policyPageDoc || !state.supabase) return;
+
+  const notice = document.getElementById('policyPageEditorNotice');
+  const btn = document.getElementById('policyPageSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  const newHtml = _policyPageQuill.root.innerHTML;
+  const oldVersion = _policyPageDoc.version || '2.0';
+
+  // Bump version: parse as float, increment by 0.1
+  const vNum = parseFloat(oldVersion);
+  const newVersion = (isNaN(vNum) ? 2.1 : Math.round((vNum + 0.1) * 10) / 10).toString();
+
+  // Archive current version
+  await state.supabase.from('policy_document_versions').insert({
+    policy_document_id: _policyPageDoc.id,
+    version: oldVersion,
+    content_html: _policyPageDoc.content_html,
+    updated_by_employee_id: state.currentEmployeeId
+  });
+
+  // Update current document
+  const { error } = await state.supabase.from('policy_documents').update({
+    content_html: newHtml,
+    version: newVersion,
+    last_updated_by_employee_id: state.currentEmployeeId,
+    updated_at: new Date().toISOString()
+  }).eq('id', _policyPageDoc.id);
+
+  btn.disabled = false;
+  btn.textContent = 'Save as New Version';
+
+  if (error) {
+    notice.textContent = 'Save failed: ' + error.message;
+    return;
+  }
+
+  // Refresh
+  _policyPageDoc.content_html = newHtml;
+  _policyPageDoc.version = newVersion;
+  _policyPageDoc.updated_at = new Date().toISOString();
+
+  // Update cache
+  const idx = state.policyDocuments.findIndex(d => d.id === _policyPageDoc.id);
+  if (idx >= 0) state.policyDocuments[idx] = { ..._policyPageDoc };
+
+  exitPolicyEditMode();
+  loadPolicyPage();
+  notice.textContent = '';
+}
+
+document.getElementById('policyEditBtn')?.addEventListener('click', enterPolicyEditMode);
+document.getElementById('policyPageCancelBtn')?.addEventListener('click', exitPolicyEditMode);
+document.getElementById('policyPageSaveBtn')?.addEventListener('click', savePolicyAsNewVersion);
+
+// ---- Onboarding Welcome Overlay (new hire first-login) ----
+
+async function initOnboardingOverlay() {
+  const overlay = document.getElementById('onboardingOverlay');
+  if (!overlay) return;
+
+  // Load policy docs for the overlay
+  if (!state.policyDocuments.length) {
+    const { data } = await state.supabase.from('policy_documents').select('*').order('created_at');
+    state.policyDocuments = data || [];
+  }
+
+  // Show the overlay
+  overlay.style.display = '';
+  // Hide normal UI
+  document.querySelector('.app-shell').style.display = 'none';
+
+  // Detect returning user vs new hire
+  const profile = state.employeeProfile;
+  const firstName = (profile?.full_name || '').split(' ')[0] || 'there';
+  const isReturning = !!(profile?.direct_manager_email || profile?.current_city || profile?.date_of_birth);
+  const welcomeEl = document.getElementById('onboardingWelcomeName');
+  const introEl = document.querySelector('[data-step="welcome"] .onboarding-intro');
+  const doneIntroEl = document.querySelector('[data-step="done"] .onboarding-intro');
+  if (isReturning) {
+    if (welcomeEl) welcomeEl.textContent = `Quick Profile Check, ${firstName}`;
+    if (introEl) introEl.textContent = "Let\u2019s make sure your info is up to date. Review your details, fill in anything missing, and re-read the remote working policy.";
+    if (doneIntroEl) doneIntroEl.textContent = "Your profile is up to date. Thanks for keeping your info current!";
+  } else {
+    if (welcomeEl) welcomeEl.textContent = `Welcome to the Colony, ${firstName}!`;
+  }
+
+  // Populate profile form dropdowns
+  populateOnboardingProfileForm();
+
+  // Resume from last incomplete step
+  const hasProfile = profile?.direct_manager_email && profile?.department?.name && profile?.current_city && profile?.date_of_birth && profile?.emergency_contact_name && profile?.emergency_contact_phone;
+
+  // Check if remote working policy was acknowledged (in this cycle)
+  const { data: acks } = await state.supabase
+    .from('policy_acknowledgments')
+    .select('policy_key')
+    .eq('employee_id', state.currentEmployeeId)
+    .eq('policy_key', 'remote_working_policy');
+  const hasAckedPolicy = acks?.length > 0;
+
+  let startStep = 'welcome';
+  if (hasProfile && hasAckedPolicy) {
+    // Both profile and policy done — jump to final step
+    startStep = 'done';
+  } else if (hasProfile && !hasAckedPolicy) {
+    // Profile done but policy not yet re-acknowledged — go to policy
+    const remoteDoc = state.policyDocuments.find(d => d.policy_key === 'remote_working_policy');
+    const remoteContentEl = document.getElementById('onbPolicyRemoteContent');
+    if (remoteContentEl) remoteContentEl.innerHTML = remoteDoc?.content_html || '<p>Policy content is being prepared.</p>';
+    startStep = 'policy-remote';
+  }
+  // Otherwise start from welcome → profile
+
+  showOnboardingStep(startStep);
+}
+
+function showOnboardingStep(step) {
+  const overlay = document.getElementById('onboardingOverlay');
+  if (!overlay) return;
+  overlay.querySelectorAll('.onboarding-step').forEach(el => {
+    el.style.display = el.dataset.step === step ? '' : 'none';
+  });
+  // Scroll to top
+  overlay.querySelector('.onboarding-overlay-inner')?.scrollTo(0, 0);
+}
+
+function populateOnboardingProfileForm() {
+  // Manager dropdown
+  const managerSelect = document.getElementById('onbProfileManager');
+  if (managerSelect) {
+    managerSelect.innerHTML = '<option value="">Select your manager</option>';
+    state.employeeDirectory.forEach(e => {
+      if (e.id === state.currentEmployeeId) return;
+      const opt = document.createElement('option');
+      opt.value = e.email;
+      opt.textContent = displayPersonName(e.full_name, 'Employee');
+      managerSelect.appendChild(opt);
+    });
+  }
+
+  // Department dropdown
+  const deptSelect = document.getElementById('onbProfileDept');
+  if (deptSelect) {
+    deptSelect.innerHTML = '';
+    const deptNames = [...new Set(state.employeeDirectory.map(e => e.department?.name).filter(Boolean))].sort();
+    deptNames.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      deptSelect.appendChild(opt);
+    });
+  }
+
+  // Pre-fill from existing profile data
+  const profile = state.employeeProfile;
+  if (profile?.direct_manager_email && managerSelect) managerSelect.value = profile.direct_manager_email;
+  if (profile?.department?.name && deptSelect) deptSelect.value = profile.department.name;
+  if (profile?.current_city) document.getElementById('onbProfileCity').value = profile.current_city;
+  if (profile?.date_of_birth) document.getElementById('onbProfileBirthday').value = profile.date_of_birth;
+  if (profile?.emergency_contact_name) document.getElementById('onbProfileEmergencyName').value = profile.emergency_contact_name;
+  if (profile?.emergency_contact_phone) document.getElementById('onbProfileEmergencyPhone').value = profile.emergency_contact_phone;
+}
+
+// Step navigation: Welcome -> Profile
+document.querySelector('[data-goto="profile"]')?.addEventListener('click', () => showOnboardingStep('profile'));
+
+// Step: Save Profile
+document.getElementById('onbProfileSaveBtn')?.addEventListener('click', async () => {
+  const manager = document.getElementById('onbProfileManager')?.value;
+  const dept = document.getElementById('onbProfileDept')?.value;
+  const city = document.getElementById('onbProfileCity')?.value?.trim();
+  const birthday = document.getElementById('onbProfileBirthday')?.value;
+  const emergName = document.getElementById('onbProfileEmergencyName')?.value?.trim();
+  const emergPhone = document.getElementById('onbProfileEmergencyPhone')?.value?.trim();
+  const errorEl = document.getElementById('onbProfileError');
+
+  // Validate mandatory (manager optional for leadership/admin)
+  const managerRequired = !isLeadershipRole();
+  if ((managerRequired && !manager) || !dept || !city || !birthday || !emergName || !emergPhone) {
+    errorEl.textContent = 'Please fill in all required fields.';
+    errorEl.style.display = '';
+    return;
+  }
+  errorEl.style.display = 'none';
+
+  // Resolve department ID
+  const deptMatch = state.employeeDirectory.find(e => e.department?.name === dept);
+  const deptId = deptMatch?.department?.id;
+  if (!deptId) {
+    errorEl.textContent = 'Could not resolve department. Try another.';
+    errorEl.style.display = '';
+    return;
+  }
+
+  const btn = document.getElementById('onbProfileSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  const { error } = await state.supabase.from('employees').update({
+    direct_manager_email: manager,
+    department_id: deptId,
+    current_city: city,
+    date_of_birth: birthday,
+    emergency_contact_name: emergName,
+    emergency_contact_phone: emergPhone,
+    updated_at: new Date().toISOString()
+  }).eq('id', state.currentEmployeeId);
+
+  if (error) {
+    errorEl.textContent = `Save failed: ${error.message}`;
+    errorEl.style.display = '';
+    btn.disabled = false;
+    btn.textContent = 'Save & Continue';
+    return;
+  }
+
+  // Auto-check the "Profile completed" item on the onboarding checklist
+  await autoCheckOnboardingItem('profile_completed');
+
+  btn.textContent = 'Save & Continue';
+  btn.disabled = false;
+
+  // Load and show remote working policy
+  const remoteDoc = state.policyDocuments.find(d => d.policy_key === 'remote_working_policy');
+  const remoteContentEl = document.getElementById('onbPolicyRemoteContent');
+  if (remoteContentEl) remoteContentEl.innerHTML = remoteDoc?.content_html || '<p>Policy content is being prepared.</p>';
+
+  showOnboardingStep('policy-remote');
+});
+
+// Step: Got it — Remote Working Policy (includes leave policy)
+document.getElementById('onbPolicyRemoteGotIt')?.addEventListener('click', async () => {
+  try {
+    const doc = state.policyDocuments.find(d => d.policy_key === 'remote_working_policy');
+    // Record acknowledgment
+    await state.supabase.from('policy_acknowledgments').upsert({
+      employee_id: state.currentEmployeeId,
+      policy_key: 'remote_working_policy',
+      policy_version: doc?.version || '1',
+      acknowledged_at: new Date().toISOString()
+    }, { onConflict: 'employee_id,policy_key' });
+
+    await autoCheckOnboardingItem('policy_remote_working_policy');
+
+    showOnboardingStep('done');
+  } catch (err) {
+    console.error('Failed to acknowledge remote working policy:', err);
+  }
+});
+
+// Step: Enter Colony
+document.getElementById('onbDoneBtn')?.addEventListener('click', async () => {
+  // Mark onboarding_completed
+  const onbResult = await state.supabase.from('employees').update({
+    onboarding_completed: true,
+    updated_at: new Date().toISOString()
+  }).eq('id', state.currentEmployeeId);
+
+  if (onbResult.error) {
+    console.error('Failed to mark onboarding complete:', onbResult.error);
+    colonyAlert('Unable to save your onboarding status. Please try again or contact your manager.');
+    return;
+  }
+
+  if (state.employeeProfile) state.employeeProfile.onboarding_completed = true;
+
+  // Check if all checklist items are done → mark checklist as completed
+  await maybeCompleteChecklist();
+
+  // Hide overlay, show normal UI
+  document.getElementById('onboardingOverlay').style.display = 'none';
+  document.querySelector('.app-shell').style.display = '';
+
+  // Reload data and navigate
+  await loadEmployeeDirectoryFromSupabase();
+  navigateToScreen(defaultHomeScreen(), { replace: true });
+});
+
+// ---- Auto-check onboarding item by auto_key ----
+
+async function autoCheckOnboardingItem(autoKey) {
+  if (!state.supabase || !state.currentEmployeeId) return;
+
+  // Find the active checklist for this employee
+  const { data: checklists } = await state.supabase
+    .from('onboarding_checklists')
+    .select('id')
+    .eq('employee_id', state.currentEmployeeId)
+    .eq('status', 'active')
+    .limit(1);
+
+  if (!checklists?.length) return;
+  const checklistId = checklists[0].id;
+
+  // Find the auto item
+  const { data: items } = await state.supabase
+    .from('onboarding_checklist_items')
+    .select('id')
+    .eq('checklist_id', checklistId)
+    .eq('auto_key', autoKey)
+    .eq('is_completed', false)
+    .limit(1);
+
+  if (!items?.length) return;
+
+  await state.supabase.from('onboarding_checklist_items').update({
+    is_completed: true,
+    completed_at: new Date().toISOString(),
+    completed_by_employee_id: state.currentEmployeeId
+  }).eq('id', items[0].id);
+}
+
+async function maybeCompleteChecklist() {
+  if (!state.supabase || !state.currentEmployeeId) return;
+  const { data: checklists } = await state.supabase
+    .from('onboarding_checklists')
+    .select('id')
+    .eq('employee_id', state.currentEmployeeId)
+    .eq('status', 'active')
+    .limit(1);
+  if (!checklists?.length) return;
+
+  const { data: remaining } = await state.supabase
+    .from('onboarding_checklist_items')
+    .select('id')
+    .eq('checklist_id', checklists[0].id)
+    .eq('is_completed', false)
+    .limit(1);
+
+  if (!remaining?.length) {
+    await state.supabase.from('onboarding_checklists').update({
+      status: 'completed',
+      updated_at: new Date().toISOString()
+    }).eq('id', checklists[0].id);
+  }
+}
+
+// ---- Sidebar Onboarding Badge ----
+
+async function loadOnboardingBadge() {
+  if (!state.supabase || !isLeadershipRole()) return;
+  const { data, error } = await state.supabase
+    .from('onboarding_checklists')
+    .select('id')
+    .eq('status', 'active');
+
+  if (error) { console.error('Onboarding badge load error:', error); return; }
+  const count = data?.length || 0;
+
+  // Update sidebar badge
+  const navBtn = document.querySelector('[data-screen="people-directory"]');
+  if (!navBtn) return;
+  const existingBadge = navBtn.querySelector('.sidebar-onboarding-badge');
+  if (count > 0 && !existingBadge) {
+    const badge = document.createElement('span');
+    badge.className = 'sidebar-onboarding-badge';
+    badge.title = `${count} active onboarding${count > 1 ? 's' : ''}`;
+    navBtn.appendChild(badge);
+  } else if (count === 0 && existingBadge) {
+    existingBadge.remove();
+  }
+}
+
+// ---- Onboarding Checklist in Employee Profile ----
+
+async function loadOnboardingChecklist(employeeId) {
+  if (!state.supabase || !isLeadershipRole()) return null;
+  const { data: checklists } = await state.supabase
+    .from('onboarding_checklists')
+    .select('id, status, created_at')
+    .eq('employee_id', employeeId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (!checklists?.length) return null;
+  const checklist = checklists[0];
+
+  const { data: items } = await state.supabase
+    .from('onboarding_checklist_items')
+    .select('*')
+    .eq('checklist_id', checklist.id)
+    .order('phase')
+    .order('sort_order');
+
+  return { ...checklist, items: items || [] };
+}
+
+function renderOnboardingChecklist(checklist, container) {
+  if (!checklist || !container) return;
+  container.innerHTML = '';
+
+  const panel = document.createElement('div');
+  panel.className = 'panel onboarding-checklist-panel';
+
+  const statusLabel = checklist.status === 'completed' ? ' (Completed)' : '';
+  panel.innerHTML = `<h3>Onboarding Checklist${statusLabel}</h3>`;
+
+  const phases = [
+    { key: 'pre_joining', label: 'Pre-Joining' },
+    { key: 'day_one', label: 'Day 1' },
+    { key: 'week_one', label: 'Week 1' },
+    { key: 'month_one', label: 'Month 1' }
+  ];
+
+  phases.forEach(phase => {
+    const phaseItems = checklist.items.filter(i => i.phase === phase.key);
+    if (!phaseItems.length) return;
+
+    const group = document.createElement('div');
+    group.className = 'onboarding-phase-group';
+    group.innerHTML = `<div class="onboarding-phase-label">${phase.label}</div>`;
+
+    phaseItems.forEach(item => {
+      const completedBy = item.completed_by_employee_id
+        ? (lookupEmployee(item.completed_by_employee_id)?.full_name || '').split(' ')[0]
+        : '';
+      const completedDate = item.completed_at ? new Date(item.completed_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : '';
+      const metaText = item.is_completed ? `${completedBy} — ${completedDate}` : (item.is_auto ? 'Auto' : '');
+
+      const row = document.createElement('div');
+      row.className = 'onboarding-item';
+      row.innerHTML = `
+        <input type="checkbox" ${item.is_completed ? 'checked' : ''} ${item.is_auto && !item.is_completed ? 'disabled' : ''} data-item-id="${item.id}" data-checklist-id="${checklist.id}" />
+        <span class="onboarding-item-title ${item.is_completed ? 'completed' : ''}">${escapeHtml(item.title)}${item.is_auto && !item.is_completed ? ' <span class="onboarding-item-auto">(auto-completed by new hire)</span>' : ''}</span>
+        <span class="onboarding-item-meta">${escapeHtml(metaText)}</span>
+      `;
+      group.appendChild(row);
+    });
+    panel.appendChild(group);
+  });
+
+  container.appendChild(panel);
+
+  // Delegate checkbox clicks
+  panel.addEventListener('change', async (e) => {
+    const checkbox = e.target.closest('input[type="checkbox"][data-item-id]');
+    if (!checkbox) return;
+    const itemId = checkbox.dataset.itemId;
+    const checklistId = checkbox.dataset.checklistId;
+    const isChecked = checkbox.checked;
+
+    try {
+      await state.supabase.from('onboarding_checklist_items').update({
+        is_completed: isChecked,
+        completed_at: isChecked ? new Date().toISOString() : null,
+        completed_by_employee_id: isChecked ? state.currentEmployeeId : null
+      }).eq('id', itemId);
+
+      // Check if all items done → mark checklist completed
+      const { data: remaining } = await state.supabase
+        .from('onboarding_checklist_items')
+        .select('id')
+        .eq('checklist_id', checklistId)
+        .eq('is_completed', false)
+        .limit(1);
+
+      if (!remaining?.length) {
+        await state.supabase.from('onboarding_checklists').update({
+          status: 'completed',
+          updated_at: new Date().toISOString()
+        }).eq('id', checklistId);
+        // Clear onboarding flag on employee
+        const empId = checklist.employee_id || state.employeeDirectory.find(e => {
+          // find from checklist items context
+          return true;
+        })?.id;
+      }
+
+      // Refresh the employee directory to update tags/badges
+      await loadEmployeeDirectoryFromSupabase();
+      loadOnboardingBadge().catch(console.error);
+    } catch (err) {
+      console.error('Failed to update onboarding checklist item:', err);
+      checkbox.checked = !isChecked; // revert on failure
+    }
+  });
+}
+
+// ---- Auto-spawn checklist on employee creation ----
+
+async function spawnOnboardingForEmployee(employeeId) {
+  if (!state.supabase) return;
+  // Check if active checklist already exists
+  const { data: existing } = await state.supabase
+    .from('onboarding_checklists')
+    .select('id')
+    .eq('employee_id', employeeId)
+    .eq('status', 'active')
+    .limit(1);
+  if (existing?.length) return; // already has one
+
+  const { data, error } = await state.supabase.rpc('spawn_onboarding_checklist', { p_employee_id: employeeId });
+  if (error) console.error('Failed to spawn onboarding checklist:', error);
+  return data;
+}
+
+// ---- Hook: Auto-spawn on employee creation ----
+// We need to patch the existing "add employee" flow to also spawn a checklist.
+// Find and wrap the employee creation handler.
+
+const _origLoadEmployeeDirectory = loadEmployeeDirectoryFromSupabase;
+
+// ---- Employee Profile: inject checklist if onboarding ----
+
+// We hook into the profile screen rendering by watching for when it becomes active.
+const _profileScreen = document.getElementById('employee-profile');
+if (_profileScreen) {
+  const observer = new MutationObserver(async () => {
+    if (!_profileScreen.classList.contains('active') || !isLeadershipRole()) return;
+    // Find the profile employee
+    const profileHeading = document.getElementById('profileMainHeading');
+    const profileName = profileHeading?.textContent?.replace('My Profile', '').trim() || state.currentEmployee;
+    const employee = (state.employeeDirectory || []).find(e =>
+      displayPersonName(e.full_name, 'Employee') === profileName || e.full_name === profileName
+    ) || (profileName === 'My Profile' ? state.employeeProfile : null);
+
+    if (!employee) return;
+
+    // Check if there's an onboarding checklist for this employee
+    let checklistContainer = document.getElementById('onboardingChecklistContainer');
+    if (!checklistContainer) {
+      checklistContainer = document.createElement('div');
+      checklistContainer.id = 'onboardingChecklistContainer';
+      // Insert before the first panel in the profile screen
+      const firstPanel = _profileScreen.querySelector('.panel');
+      if (firstPanel) _profileScreen.querySelector('.screen-head')?.after(checklistContainer);
+    }
+
+    if (employee.onboarding_completed === false) {
+      const checklist = await loadOnboardingChecklist(employee.id);
+      if (checklist) {
+        checklist.employee_id = employee.id;
+        renderOnboardingChecklist(checklist, checklistContainer);
+      } else {
+        checklistContainer.innerHTML = '';
+      }
+    } else {
+      checklistContainer.innerHTML = '';
+    }
+  });
+  observer.observe(_profileScreen, { attributes: true, attributeFilter: ['class'] });
+}
+
+// =========================================================================
+// END ONBOARDING SYSTEM
+// =========================================================================
+
 updateSidebarIdentityLabels();
 updateAllLastEditLabels();
 setSelectedEmployee(DEFAULT_EMPLOYEE);
@@ -12136,6 +16230,15 @@ renderClientOwnerOptions();
 resetClientEditor();
 setClientFormNotice('');
 initializeScreenHistory();
+
+// Set footer version from git tag (version.js sets COLONY_VERSION at build time)
+(function setFooterVersion() {
+  const el = document.getElementById('footerVersion');
+  if (el) el.textContent = 'Colony ' + (window.COLONY_VERSION || 'dev') + ' \u00A9 2026';
+})();
+
+// Load changelog for home feed
+fetch('changelog.json').then(r => r.json()).then(data => { COLONY_UPDATES = data; }).catch(() => {});
 
 initializeSupabaseAuth().catch((error) => {
   console.error(error);

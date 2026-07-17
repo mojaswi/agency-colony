@@ -65,9 +65,9 @@ SET search_path = app, public
 AS $$
   SELECT CASE lower(coalesce(input_email, ''))
     WHEN 'admin@youragency.com' THEN 'admin'::app.access_level
-    WHEN 'leader1@youragency.com' THEN 'leadership'::app.access_level
-    WHEN 'leader2@youragency.com' THEN 'leadership'::app.access_level
-    WHEN 'leader3@youragency.com' THEN 'leadership'::app.access_level
+    WHEN 'strategy-lead@youragency.com' THEN 'leadership'::app.access_level
+    WHEN 'creative-lead@youragency.com' THEN 'leadership'::app.access_level
+    WHEN 'am-lead@youragency.com' THEN 'leadership'::app.access_level
     ELSE null
   END;
 $$;

@@ -1,215 +1,166 @@
 # Setup Guide
 
-Complete instructions for setting up your own Agency Colony instance.
+Everything needed to run your own Agency Colony instance.
+
+> **v2 note:** most operational settings now live in the **database** and are editable in-app (Admin Settings → Operational Config) — you only need to edit code for the initial bootstrap. See [Configuration](#6-configuration) below.
 
 ---
 
-## 1. Create a Supabase Project
+## 1. Create a Supabase project
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Note your **Project URL** (e.g., `https://abcdefghijk.supabase.co`)
-3. Note your **anon/public key** from Settings > API
-4. Note your **service_role key** from Settings > API (keep this secret)
+1. Go to [supabase.com](https://supabase.com) and create a project
+2. From **Settings → API**, note your:
+   - **Project URL** (`https://your-project-ref.supabase.co`)
+   - **anon/public key** (safe in the browser — RLS protects your data)
+   - **service_role key** (secret — server-side only, never commit it)
 
-## 2. Run Database Migrations
+## 2. Run the database migrations
 
-Run all SQL files in `supabase/migrations/` in alphabetical order against your Supabase database. You can do this via:
+Run every file in `supabase/migrations/` **in alphabetical order**:
 
-- **Supabase Dashboard**: Go to SQL Editor, paste each file's contents, and run
-- **Supabase CLI**: `supabase db push` (requires `supabase` CLI and linking your project)
+- **Supabase Dashboard** → SQL Editor → paste and run each file, or
+- **Supabase CLI** → `supabase db push` (after linking your project)
 
-The migrations create:
-- All tables (employees, departments, clients, projects, allocations, leave system, deals, etc.)
-- Row Level Security (RLS) policies
-- Database functions and triggers
-- Views for utilization analytics
+They create ~33 tables, 12 enums, 40+ functions, 20+ triggers and **100+ RLS policies** covering:
 
-## 3. Set Up Google OAuth
+- employees, departments, clients, projects, allocations
+- the leave system (requests, balances, Apr–Mar cycles, half-days, holidays)
+- daily/weekly/recurring tasks
+- deals + stage history
+- client analytics (LinkedIn, Instagram, community)
+- invoices, policies, onboarding, feature requests, notifications
+- DB-backed config: `access_overrides`, `app_config`, `public_holidays`
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create or select a project
-3. Go to **APIs & Services > Credentials**
-4. Create an **OAuth 2.0 Client ID** (Web application type)
-5. Add your Supabase project's callback URL as an authorized redirect URI:
+The migrations are schema + a **placeholder bootstrap**: they seed the departments and a few placeholder
+accounts (`admin@youragency.com`, `strategy-lead@…`, `creative-lead@…`, `am-lead@…`, finance) so the first
+sign-in has a superadmin to attach to. Change those emails to your real ones **before running the
+migration** (search-replace `youragency.com`), or delete the seeded rows afterwards. No client data,
+no real people.
+
+## 3. Set up Google OAuth
+
+1. In [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services → Credentials**
+2. Create an **OAuth 2.0 Client ID** (Web application)
+3. Add your Supabase callback as an authorized redirect URI:
    ```
-   https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback
+   https://your-project-ref.supabase.co/auth/v1/callback
    ```
-6. In Supabase Dashboard, go to **Authentication > Providers > Google**
-7. Enable Google provider and paste your Client ID and Client Secret
-8. Set "Restrict to domain" if you want to limit sign-in to your Google Workspace domain
+4. In Supabase → **Authentication → Providers → Google**: enable it, paste the Client ID + Secret
+5. Restrict to your Google Workspace domain if you want sign-in limited to your team
 
-## 4. Configure Environment Variables
+> The app uses the **PKCE** flow. Don't switch to implicit — it breaks token refresh across tabs.
 
-Copy `.env.example` to `.env` and fill in the values:
+## 4. Environment variables
+
+```bash
+cp .env.example .env
+```
 
 ```
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-RESEND_API_KEY=your_resend_api_key
-EMAIL_SENDER=noreply@yourdomain.com
-APP_BASE_URL=https://your-deployment-url.com
+RESEND_API_KEY=your_resend_api_key          # optional — email notifications
+ANTHROPIC_API_KEY=your_anthropic_api_key    # optional — AI analytics insights
+EMAIL_SENDER=noreply@youragency.com
+APP_BASE_URL=https://colony.youragency.com
 ```
 
-For Netlify deployment, set these as environment variables in your Netlify site settings.
+For Netlify, set the same values in **Site settings → Environment variables**.
 
-## 5. Configure app.js
+## 5. Run it locally
 
-Open `app.js` and update the following sections at the top of the file:
+```bash
+npm install
+npm test        # 71 tests over the pure logic modules — should be green
+netlify dev     # serves the app + functions at http://localhost:8888
+```
 
-### Access Control (lines 14-20)
+`netlify dev` serves `/api/runtime-config` from your `.env`, so the browser never needs hardcoded keys. (A plain static server will fall back to the placeholder block in `app.js` — fill it in only if you really need it, and don't commit real keys.)
+
+## 6. Configuration
+
+### Bootstrap (in code — `js/config.js`)
+
+Edit these once so you can sign in as an admin:
+
 ```js
 const ENFORCED_ACCESS_BY_EMAIL = {
   'admin@youragency.com': 'admin',
-  'leader1@youragency.com': 'leadership',
-  // Add your leadership/admin emails here
+  'creative-lead@youragency.com': 'leadership',
 };
-```
-
-### Superadmin Email (line 22)
-```js
 const SUPERADMIN_EMAIL = 'admin@youragency.com';
+const ANT_DOMAIN = '@youragency.com';           // your email domain
+const WORK_HOURS_PER_WEEK = 45;                 // your working week
+const PUBLIC_HOLIDAYS = [ /* your region's dates */ ];
 ```
 
-### Invoice Viewers (line 23)
-```js
-const INVOICE_VIEWER_EMAILS = ['finance@youragency.com', 'admin@youragency.com'];
-```
+Also set your domain in `supabase/migrations/202602230001_init_agency_colony.sql`
+(`is_agency_email`) before running it, and in `netlify/functions/runtime-config.js`.
 
-### Invoice Excluded (line 24)
-Employees excluded from invoice upload requirements:
-```js
-const INVOICE_EXCLUDED_EMAILS = ['admin@youragency.com'];
-```
+### Everything else (in the app — no deploys)
 
-### Deal Flow Extra Access (line 25)
-Non-leadership users who should see the Deal Flow screen:
-```js
-const DEAL_FLOW_EXTRA_EMAILS = ['sales@youragency.com'];
-```
+Once you're signed in as superadmin, **Admin Settings → Operational Config** manages:
 
-### Domain Restriction (line 26)
-```js
-const ANT_DOMAIN = '@youragency.com';
-```
+| Setting | What it does |
+|---|---|
+| Enforced access | pins emails to admin/leadership, overriding the DB |
+| Team approver | department → leave approver |
+| Direct manager | per-person overrides (take precedence) |
+| Invoice viewers / excluded | who sees the Invoice Center; who's exempt |
+| Hidden employees | keep access, hide from team views |
+| Deal-flow viewers | non-leadership people who can see Deal Flow |
+| Analytics personas | per-client target audience for Audience Intelligence |
+| Public holidays | the yearly list |
 
-### Team Managers (lines 29-35)
-Map each department to the email of its manager:
-```js
-const TEAM_MANAGER_BY_TEAM = Object.freeze({
-  [TEAM_AM]: 'leader3@youragency.com',
-  Art: 'leader2@youragency.com',
-  // ...
-});
-```
+Each falls back to the `js/config.js` constant when unset, so the app works before you touch any of it.
 
-### Direct Managers (lines 36-41)
-Map leadership-level employees to their direct manager:
-```js
-const DIRECT_MANAGER_BY_EMAIL = Object.freeze({
-  'leader2@youragency.com': SUPERADMIN_EMAIL,
-  // ...
-});
-```
+## 7. Branding
 
-### Deal POC Emails (line ~11185)
-Users who can be assigned as deal point-of-contact:
-```js
-const DEAL_POC_EMAILS = ['admin@youragency.com', 'sales@youragency.com'];
-```
-
-### Team Dashboard Exclusions (line ~7072)
-Employees to exclude from team dashboard views:
-```js
-const TEAM_DASHBOARD_EXCLUDE = ['finance@youragency.com'];
-```
-
-### Company/Brand Names (line ~11692)
-Update the deal flow company dropdown values to match your brands:
-```js
-<option value="Your Agency">Your Agency</option>
-<option value="Brand 2">Brand 2</option>
-<option value="Brand 3">Brand 3</option>
-```
-
-### Public Holidays (lines 55-68)
-Update the holiday list for your region/country.
-
-### Localhost Dev Fallback (lines 1628-1634)
-Update the localhost config with your Supabase URL and anon key for local development:
-```js
-return {
-  supabaseUrl: 'YOUR_SUPABASE_URL',
-  supabaseAnonKey: 'YOUR_SUPABASE_ANON_KEY',
-  appBaseUrl: location.origin,
-  allowedDomain: 'youragency.com'
-};
-```
-
-## 6. Configure Netlify Functions
-
-### runtime-config.js
-Update the `allowedDomain` fallback to your domain.
-
-### daily-reminders.js
-Update the `leadershipEmails` array with your leadership team emails (for birthday notifications).
-
-### invoice-reminder.js
-Update `INVOICE_EXCLUDED_EMAILS` and `INVOICE_COMPLETION_EMAIL` for your finance team.
-
-### feature-request-notify.js
-Update the `adminEmail` for bug report notifications.
-
-## 7. Configure index.html
-
-### Branding (lines 6, 22)
-Update the page title and splash screen text.
-
-### Domain Reference (line 80)
-Update the login helper text to reference your domain.
-
-### Home Tagline (line 92)
-Update the home screen tagline.
+Replace in `assets/`: `favicon.svg`, `favicon-32.png`, `favicon-192.png`, `colony-logo-*.svg`, `ant-icon.svg`.
+Update the page title and splash text in `index.html`.
+`assets/analytics-ant.png` is used in the task-nudge email — swap it (and the copy in `netlify/functions/task-nudge.js`) for something your team finds funny.
 
 ## 8. Deploy
 
-### Netlify (recommended)
-1. Push to a Git repository
-2. Connect the repo to Netlify
-3. Set environment variables in Netlify site settings
-4. Deploy
+1. Push to a Git repo
+2. Connect it to Netlify
+3. Set the environment variables
+4. Deploy — there's **no build step**; the root is served as-is
 
-The `netlify.toml` configures:
-- Static file serving from root
-- API redirects to Netlify functions
-- Scheduled functions (daily reminders, weekly reminders, invoice reminders)
+`netlify.toml` configures static serving, `/api/*` → functions, cache headers, and the scheduled functions:
 
-### Other Hosts
-The app is a static single-page app. You can host the frontend on any static host (Vercel, Cloudflare Pages, S3, etc.), but the Netlify functions will need to be adapted for your serverless platform.
+| Cron | When | What |
+|---|---|---|
+| `daily-reminders` | 10:00 daily | pending-leave digest, birthdays, leave cycle rollover |
+| `task-nudge` | 11:00 weekdays | nudges only people who haven't touched their tasklist |
+| `invoice-reminder` | 10:00 from the 25th | invoice upload reminders |
+| `analytics-upload-reminder` | Tue 10:00 | per-client analytics staleness, retainers only |
+| `policy-update-reminder` | Mon 10:00 | annual policy review |
 
-## 9. Set Up Email (Optional)
+Times are UTC in `netlify.toml` (`30 4 * * *` = 10:00 IST) — adjust for your timezone.
 
-Email notifications use [Resend](https://resend.com). To enable:
-1. Create a Resend account
-2. Verify your sending domain
-3. Get an API key
-4. Set `RESEND_API_KEY` and `EMAIL_SENDER` in environment variables
+> **Scheduled functions gotcha:** they're invoked over HTTP POST by Netlify's scheduler, so never guard them on `event.httpMethod` — that silently kills every cron. They guard on the `next_run` payload instead. Every run writes a heartbeat, surfaced in **Admin Settings → Scheduled Jobs Health**.
 
-Without email configured, the app works fine -- email notifications are gracefully skipped.
+### Other hosts
+
+The frontend is a static SPA and will run anywhere (Vercel, Cloudflare Pages, S3). The `netlify/functions/` need porting to your platform's serverless runtime.
+
+## 9. Email (optional)
+
+Notifications use [Resend](https://resend.com): create an account, verify your sending domain, set `RESEND_API_KEY` + `EMAIL_SENDER`. Without it, the app runs fine and email is skipped gracefully.
+
+## 10. AI insights (optional)
+
+The analytics insight buttons call Claude via `netlify/functions/analyze-analytics.js`. Set `ANTHROPIC_API_KEY` to enable them; without it the rest of analytics works normally.
 
 ---
 
-## Summary of Files to Customize
+## First run checklist
 
-| File | What to Change |
-|------|---------------|
-| `app.js` (top) | Email lists, domain, team managers, company names, holidays |
-| `app.js` (localhost block) | Supabase URL + anon key for local dev |
-| `index.html` | Branding text, domain references |
-| `netlify/functions/runtime-config.js` | Domain fallback |
-| `netlify/functions/daily-reminders.js` | Leadership emails |
-| `netlify/functions/invoice-reminder.js` | Finance emails |
-| `netlify/functions/feature-request-notify.js` | Admin email |
-| `.env` / Netlify env vars | All secrets and URLs |
-| `supabase/migrations/` | Run as-is (schema only, no real data) |
-| `assets/` | Replace favicons and logos with your own branding |
+1. Migrations applied
+2. Google OAuth working, domain restricted
+3. `js/config.js`: superadmin email + domain set
+4. Sign in — your profile bootstraps automatically
+5. Admin Settings → add your team, departments, holidays
+6. Everyone else signs in and lands on an empty, working app

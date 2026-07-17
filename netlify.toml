@@ -1,11 +1,14 @@
 [build]
+  command = "HASH=$(git describe --tags --always) && echo \"var COLONY_VERSION = '${HASH}';\" > version.js && sed -i -E \"s/\\?v=[a-zA-Z0-9._-]+/?v=${HASH}/g\" index.html"
   publish = "."
   functions = "netlify/functions"
   ignore = "if [ -z \"$CACHED_COMMIT\" ]; then exit 1; fi; git diff --quiet $CACHED_COMMIT HEAD -- . ':!*.md' ':!.claude'"
 
-[context.deploy-preview]
-  ignore = "true"
-
+# Deploy previews ENABLED (PR-based) for pre-live testing. They inherit the
+# main [build] ignore rule, so doc-only PRs still skip. Auth on a preview URL
+# works because sign-in uses redirectTo: window.location.origin and the
+# deploy-preview-*--youragency.netlify.app wildcard is in Supabase's Redirect URLs.
+# Branch deploys stay disabled so backup/* branches don't consume build minutes.
 [context.branch-deploy]
   ignore = "true"
 
@@ -17,6 +20,38 @@
   [headers.values]
     X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
 
+# HTML must always be revalidated so new ?v= cache-bust strings take effect
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# JS/CSS with ?v= hash can be cached aggressively
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/js/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/vendor/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
@@ -25,8 +60,17 @@
 [functions."daily-reminders"]
   schedule = "30 4 * * *"
 
-[functions."weekly-allocation-reminder"]
-  schedule = "30 4 * * 1"
+# 11:00 IST weekday task nudge (only for people who have not touched tasks)
+[functions."task-nudge"]
+  schedule = "30 5 * * 1-5"
 
 [functions."invoice-reminder"]
   schedule = "30 4 * * *"
+
+[functions."policy-update-reminder"]
+  schedule = "30 4 * * 1"
+
+# Tuesday 10:00 IST (not Monday): the AM team gets Monday to upload unprompted;
+# the function itself skips anyone who has already uploaded this week.
+[functions."analytics-upload-reminder"]
+  schedule = "30 4 * * 2"

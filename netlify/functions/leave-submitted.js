@@ -86,6 +86,7 @@ exports.handler = async (event) => {
       start_date,
       end_date,
       reason,
+      is_half_day,
       status,
       approver_emails,
       created_at,
@@ -142,7 +143,7 @@ exports.handler = async (event) => {
 
   const employeeName = leaveRequest.employee?.full_name || 'Employee';
   const leaveDateRange = formatDateRange(leaveRequest.start_date, leaveRequest.end_date);
-  const subject = `Leave approval needed: ${employeeName} (${leaveRequest.leave_type})`;
+  const subject = `Leave approval needed: ${employeeName} (${leaveRequest.leave_type}${leaveRequest.is_half_day ? ' · half day' : ''})`;
   const reasonText = leaveRequest.reason ? `<p><strong>Reason:</strong> ${escapeHtml(leaveRequest.reason)}</p>` : '';
 
   const html = `

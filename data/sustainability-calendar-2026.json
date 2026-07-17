@@ -1,0 +1,1719 @@
+[
+  {
+    "id": "veganuary-2026",
+    "name": "Veganuary",
+    "emoji": "🌱",
+    "start_date": "2026-01-01",
+    "end_date": "2026-01-31",
+    "duration_type": "month",
+    "category": "awareness_campaign",
+    "themes": [
+      "food",
+      "emissions",
+      "land_use",
+      "health"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "Veganuary",
+    "description": "Month-long global campaign encouraging plant-based eating to reduce the environmental impact of food systems, covering emissions, land use, waste and everyday consumer choices.",
+    "content_hook": "Frame plant-based choices as a tangible climate action. Tie into New Year resolution energy and sustainable lifestyle messaging.",
+    "relevance_tags": [
+      "consumer_behaviour",
+      "carbon_footprint",
+      "food_systems"
+    ],
+    "url": "https://veganuary.com/",
+    "confirmed": true
+  },
+  {
+    "id": "net-zero-summit-goa-2026",
+    "name": "International Net Zero Summit 2026",
+    "emoji": "🇮🇳",
+    "start_date": "2026-01-22",
+    "end_date": "2026-01-24",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "net_zero",
+      "climate_finance",
+      "decarbonisation"
+    ],
+    "region": "india",
+    "region_detail": "Goa, India",
+    "organiser": "Government of Goa / IICSR / MEPSC",
+    "description": "Landmark gathering of policymakers, corporate leaders, investors, and sustainability practitioners exploring Net Zero pathways, carbon credits, and blockchain-based transparency.",
+    "content_hook": "India Net Zero momentum. Clients can share decarbonisation progress or India-specific climate strategies aligned with India's 2070 target.",
+    "relevance_tags": [
+      "net_zero",
+      "india_policy",
+      "carbon_credits"
+    ],
+    "url": "https://www.iicsr.com/inzp26",
+    "confirmed": true
+  },
+  {
+    "id": "clean-energy-day-2026",
+    "name": "International Day of Clean Energy",
+    "emoji": "⚡",
+    "start_date": "2026-01-26",
+    "end_date": "2026-01-26",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "energy",
+      "renewables",
+      "just_transition"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "UN observance promoting awareness and action for a just and inclusive transition to clean energy for the benefit of people and the planet.",
+    "content_hook": "Energy access and innovation stories. Highlight clean energy breakthroughs or client contributions to the energy transition.",
+    "relevance_tags": [
+      "renewables",
+      "energy_access",
+      "fossil_fuel_transition"
+    ],
+    "url": "https://www.un.org/en/observances/clean-energy-day",
+    "confirmed": true
+  },
+  {
+    "id": "world-wetlands-day-2026",
+    "name": "World Wetlands Day",
+    "emoji": "🌊",
+    "start_date": "2026-02-02",
+    "end_date": "2026-02-02",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "water",
+      "biodiversity",
+      "climate_adaptation"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "Ramsar Convention / United Nations",
+    "description": "Raises awareness about wetlands — critical for biodiversity, climate mitigation and adaptation, and freshwater availability. Nearly 90% of wetlands have been degraded since the 1700s.",
+    "content_hook": "Water-focused clients can tie into freshwater scarcity narratives. Strong visual storytelling opportunity around ecosystem restoration.",
+    "relevance_tags": [
+      "wetlands",
+      "freshwater",
+      "ecosystem_restoration"
+    ],
+    "url": "https://www.worldwetlandsday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "india-sustainability-summit-2026",
+    "name": "India Sustainability Summit 2026",
+    "emoji": "🇮🇳",
+    "start_date": "2026-02-13",
+    "end_date": "2026-02-13",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "esg",
+      "circular_economy",
+      "climate_action"
+    ],
+    "region": "india",
+    "region_detail": "Mumbai, India",
+    "organiser": "India CSR",
+    "description": "Theme: 'Sustainability as Strategy: Building a Green, Responsible, and Future-Ready India.' Brings together corporate leaders on ESG, climate action, and circular innovation.",
+    "content_hook": "India-based clients can align thought leadership content with summit themes. ESG strategy positioning opportunity.",
+    "relevance_tags": [
+      "india_corporate",
+      "esg_strategy",
+      "green_business"
+    ],
+    "url": "https://indiacsr.in/sustainability-summit/",
+    "confirmed": true
+  },
+  {
+    "id": "world-social-justice-day-2026",
+    "name": "World Day of Social Justice",
+    "emoji": "⚖️",
+    "start_date": "2026-02-20",
+    "end_date": "2026-02-20",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "social_justice",
+      "equity",
+      "just_transition"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Global reminder that everyone deserves equal rights, fair treatment, and the chance to thrive. Highlights poverty, inequality, decent work, and education access.",
+    "content_hook": "Just transition and equity messaging. Connect climate action to social outcomes — who benefits, who bears the burden.",
+    "relevance_tags": [
+      "equity",
+      "just_transition",
+      "decent_work"
+    ],
+    "url": "https://www.un.org/en/observances/social-justice-day",
+    "confirmed": true
+  },
+  {
+    "id": "wsds-2026",
+    "name": "World Sustainable Development Summit (WSDS) 2026",
+    "emoji": "🇮🇳",
+    "start_date": "2026-02-25",
+    "end_date": "2026-02-27",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "sustainable_development",
+      "climate_action",
+      "sdgs"
+    ],
+    "region": "india",
+    "region_detail": "New Delhi, India",
+    "organiser": "TERI (The Energy and Resources Institute)",
+    "description": "Silver Jubilee edition of TERI's flagship summit. Theme: 'Transformations — Vision, Voices, and Values for Sustainable Development.' The only independently convened international sustainability summit based in the Global South.",
+    "content_hook": "Major India sustainability moment. Clients can comment on key announcements or share their own sustainability milestones and thought leadership.",
+    "relevance_tags": [
+      "india_policy",
+      "global_south",
+      "sdgs",
+      "climate_leadership"
+    ],
+    "url": "https://wsds.teriin.org/2026/",
+    "confirmed": true
+  },
+  {
+    "id": "international-polar-bear-day-2026",
+    "name": "International Polar Bear Day",
+    "emoji": "🐻‍❄️",
+    "start_date": "2026-02-27",
+    "end_date": "2026-02-27",
+    "duration_type": "day",
+    "category": "awareness_campaign",
+    "themes": [
+      "biodiversity",
+      "climate_change",
+      "arctic"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "Polar Bears International",
+    "description": "Annual event raising awareness about polar bear conservation and the impact of climate warming on Arctic habitats.",
+    "content_hook": "Climate change made tangible through a charismatic species. Powerful visual content day — connect warming to real-world impact.",
+    "relevance_tags": [
+      "arctic",
+      "species_conservation",
+      "climate_warming"
+    ],
+    "url": "https://polarbearsinternational.org/act-now/awareness-events/international-polar-bear-day/",
+    "confirmed": true
+  },
+  {
+    "id": "world-wildlife-day-2026",
+    "name": "World Wildlife Day",
+    "emoji": "🦁",
+    "start_date": "2026-03-03",
+    "end_date": "2026-03-03",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "biodiversity",
+      "wildlife",
+      "conservation"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / CITES",
+    "description": "Celebrates and raises awareness of the world's wild animals and plants and their vital role in sustaining life on Earth.",
+    "content_hook": "Strong visual content day. Brands can connect biodiversity to their supply chains or operational footprint.",
+    "relevance_tags": [
+      "wildlife",
+      "biodiversity",
+      "supply_chain"
+    ],
+    "url": "https://wildlifeday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "international-womens-day-2026",
+    "name": "International Women's Day",
+    "emoji": "♀️",
+    "start_date": "2026-03-08",
+    "end_date": "2026-03-08",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "gender_equality",
+      "social_justice",
+      "climate_justice"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Celebrates women's achievements and calls for gender equality — increasingly intersecting with climate justice and frontline community leadership.",
+    "content_hook": "Highlight women in climate leadership, sustainability roles, or frontline communities. Intersectional storytelling that connects gender equity to environmental outcomes.",
+    "relevance_tags": [
+      "gender",
+      "climate_justice",
+      "leadership"
+    ],
+    "url": "https://www.un.org/en/observances/womens-day",
+    "confirmed": true
+  },
+  {
+    "id": "food-waste-action-week-2026",
+    "name": "Food Waste Action Week",
+    "emoji": "🍽️",
+    "start_date": "2026-03-09",
+    "end_date": "2026-03-13",
+    "duration_type": "event",
+    "category": "awareness_campaign",
+    "themes": [
+      "food",
+      "waste",
+      "circular_economy"
+    ],
+    "region": "global",
+    "region_detail": "UK-originated, global participation",
+    "organiser": "Love Food Hate Waste / WRAP",
+    "description": "The UK's biggest annual food waste reduction campaign, highlighting environmental impact of food waste and offering practical solutions for households and businesses.",
+    "content_hook": "Behaviour change content. Practical tips, impact data on food waste emissions. Works for any brand touching food supply chains.",
+    "relevance_tags": [
+      "food_waste",
+      "behaviour_change",
+      "circular_economy"
+    ],
+    "url": "https://www.lovefoodhatewaste.com/take-action-save-food/food-waste-action-week-0",
+    "confirmed": true
+  },
+  {
+    "id": "global-recycling-day-2026",
+    "name": "Global Recycling Day",
+    "emoji": "♻️",
+    "start_date": "2026-03-18",
+    "end_date": "2026-03-18",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "waste",
+      "circular_economy",
+      "emissions"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "Global Recycling Foundation",
+    "description": "Recognises recycling's role in saving 700M+ tonnes of carbon emissions annually and advocates for a joined-up global approach to recycling.",
+    "content_hook": "Circular economy messaging. Materials-focused brands can showcase lifecycle thinking, waste reduction impact, or recycled-content innovation.",
+    "relevance_tags": [
+      "recycling",
+      "circular_economy",
+      "carbon_savings"
+    ],
+    "url": "https://www.globalrecyclingday.com/",
+    "confirmed": true
+  },
+  {
+    "id": "international-day-of-forests-2026",
+    "name": "International Day of Forests",
+    "emoji": "🌲",
+    "start_date": "2026-03-21",
+    "end_date": "2026-03-21",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "forests",
+      "biodiversity",
+      "carbon_sequestration"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / FAO",
+    "description": "Celebrates the importance of all types of forests for biodiversity, climate regulation, and human livelihoods.",
+    "content_hook": "Reforestation, carbon sequestration, and sustainable materials sourcing stories. Visual storytelling with strong emotional resonance.",
+    "relevance_tags": [
+      "forests",
+      "deforestation",
+      "nature_based_solutions"
+    ],
+    "url": "https://www.fao.org/international-day-of-forests/en/",
+    "confirmed": true
+  },
+  {
+    "id": "world-water-day-2026",
+    "name": "World Water Day",
+    "emoji": "💧",
+    "start_date": "2026-03-22",
+    "end_date": "2026-03-22",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "water",
+      "sanitation",
+      "climate_adaptation"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / UN-Water",
+    "description": "Focuses on the importance of freshwater and advocates for sustainable management of water resources. A critical day for water scarcity awareness.",
+    "content_hook": "Critical day for water-tech and water-access brands. Tie into water scarcity data, innovation stories, and the water-climate nexus.",
+    "relevance_tags": [
+      "water_scarcity",
+      "sdg6",
+      "water_innovation"
+    ],
+    "url": "https://www.worldwaterday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "world-meteorological-day-2026",
+    "name": "World Meteorological Day",
+    "emoji": "🌤️",
+    "start_date": "2026-03-23",
+    "end_date": "2026-03-23",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "climate",
+      "weather",
+      "science"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "World Meteorological Organization",
+    "description": "Highlights the role of meteorological and climate services in disaster preparedness, agriculture, and everyday life.",
+    "content_hook": "Climate data storytelling — connect weather extremes to the need for climate adaptation and early warning systems.",
+    "relevance_tags": [
+      "climate_science",
+      "weather_extremes",
+      "adaptation"
+    ],
+    "url": "https://wmo.int/world-meteorological-day",
+    "confirmed": true
+  },
+  {
+    "id": "ceraweek-2026",
+    "name": "CERAWeek",
+    "emoji": "🛢️",
+    "start_date": "2026-03-23",
+    "end_date": "2026-03-27",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "energy",
+      "fossil_fuels",
+      "energy_transition"
+    ],
+    "region": "us",
+    "region_detail": "Houston, TX, USA",
+    "organiser": "S&P Global",
+    "description": "Major annual energy conference where oil, gas, and energy transition leaders gather. Signals what's happening in the real energy economy.",
+    "content_hook": "Monitor announcements for energy transition signals. Good moment for contrasting fossil fuel vs. clean energy narratives and tracking corporate commitments.",
+    "relevance_tags": [
+      "energy_transition",
+      "oil_gas",
+      "corporate_strategy"
+    ],
+    "url": "https://ceraweek.com/",
+    "confirmed": true
+  },
+  {
+    "id": "wto-ministerial-2026",
+    "name": "WTO Ministerial Meeting",
+    "emoji": "🌐",
+    "start_date": "2026-03-26",
+    "end_date": "2026-03-29",
+    "duration_type": "event",
+    "category": "policy_regulatory",
+    "themes": [
+      "trade",
+      "carbon_border_tax",
+      "policy"
+    ],
+    "region": "global",
+    "region_detail": "Cameroon",
+    "organiser": "World Trade Organisation",
+    "description": "Trade and climate overlap — EU Carbon Border Adjustment Mechanism (CBAM) coming into force in 2026 makes this meeting significant for trade-exposed economies.",
+    "content_hook": "Carbon border adjustment implications for exporters. Relevant for India and Ecuador trade-exposed clients. Track how trade policy shapes climate outcomes.",
+    "relevance_tags": [
+      "cbam",
+      "trade_policy",
+      "carbon_pricing"
+    ],
+    "url": "https://www.wto.org/",
+    "confirmed": true
+  },
+  {
+    "id": "earth-hour-2026",
+    "name": "Earth Hour",
+    "emoji": "🕯️",
+    "start_date": "2026-03-28",
+    "end_date": "2026-03-28",
+    "duration_type": "day",
+    "category": "awareness_campaign",
+    "themes": [
+      "climate",
+      "energy",
+      "community_action"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "WWF",
+    "description": "Global lights-off event at 8:30 PM local time symbolising commitment to the planet. One of the most recognised climate action moments globally.",
+    "content_hook": "Simple participation moment. Brands can share 'lights off' visuals or behind-the-scenes sustainability stories. High social media engagement potential.",
+    "relevance_tags": [
+      "symbolic_action",
+      "community",
+      "social_media"
+    ],
+    "url": "https://www.earthhour.org/",
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-zero-waste-2026",
+    "name": "International Day of Zero Waste",
+    "emoji": "🗑️",
+    "start_date": "2026-03-30",
+    "end_date": "2026-03-30",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "waste",
+      "circular_economy",
+      "consumption"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Promotes sustainable consumption and production patterns and raises awareness about how zero-waste initiatives contribute to the 2030 Agenda.",
+    "content_hook": "Zero waste commitments, packaging innovation, and circular design stories. Practical tips that resonate with conscious consumers.",
+    "relevance_tags": [
+      "zero_waste",
+      "circular_economy",
+      "sdg12"
+    ],
+    "url": "https://www.un.org/en/observances/zero-waste-day",
+    "confirmed": true
+  },
+  {
+    "id": "world-health-day-2026",
+    "name": "World Health Day",
+    "emoji": "🏥",
+    "start_date": "2026-04-07",
+    "end_date": "2026-04-07",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "health",
+      "pollution",
+      "climate_adaptation"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "World Health Organization",
+    "description": "Draws attention to global health issues — increasingly linked to climate change, air pollution, water quality, and environmental health.",
+    "content_hook": "Connect environmental quality to public health outcomes. Air quality, water purity, green spaces, heat stress — all relevant hooks.",
+    "relevance_tags": [
+      "health_climate_nexus",
+      "air_quality",
+      "environmental_health"
+    ],
+    "url": "https://www.who.int/campaigns/world-health-day",
+    "confirmed": true
+  },
+  {
+    "id": "sf-climate-week-2026",
+    "name": "San Francisco Climate Week",
+    "emoji": "🌉",
+    "start_date": "2026-04-18",
+    "end_date": "2026-04-26",
+    "duration_type": "event",
+    "category": "climate_week",
+    "themes": [
+      "climate_tech",
+      "innovation",
+      "esg",
+      "community"
+    ],
+    "region": "us",
+    "region_detail": "San Francisco Bay Area, CA, USA",
+    "organiser": "Climatebase / City of San Francisco",
+    "description": "Decentralised week-long gathering — 25,000+ attendees, 650+ events across the Bay Area. Connects climate tech, policy, business, art, and community action.",
+    "content_hook": "Directly relevant for Sample Client (SF-based). Opportunity to attend, host side events, or create content around Bay Area climate innovation and startup culture.",
+    "relevance_tags": [
+      "climate_tech",
+      "bay_area",
+      "innovation",
+      "networking"
+    ],
+    "url": "https://www.sfclimateweek.org/",
+    "confirmed": true
+  },
+  {
+    "id": "earth-day-2026",
+    "name": "Earth Day",
+    "emoji": "🌍",
+    "start_date": "2026-04-22",
+    "end_date": "2026-04-22",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "climate",
+      "environment",
+      "biodiversity",
+      "community_action"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "EARTHDAY.ORG",
+    "description": "One of the most visible environmental dates globally. Used for major announcements, annual sustainability campaigns, and public climate commitments.",
+    "content_hook": "Anchor content day. Every client should have something planned — annual sustainability updates, campaign launches, pledges, or impact reports.",
+    "relevance_tags": [
+      "flagship_day",
+      "campaigns",
+      "pledges",
+      "impact_reports"
+    ],
+    "url": "https://www.earthday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "global-action-days-2026",
+    "name": "Global Action Days 2026",
+    "emoji": "🌾",
+    "start_date": "2026-04-22",
+    "end_date": "2026-05-06",
+    "duration_type": "event",
+    "category": "awareness_campaign",
+    "themes": [
+      "food",
+      "climate",
+      "education"
+    ],
+    "region": "global",
+    "region_detail": "150+ countries",
+    "organiser": "Foundation for Environmental Education (FEE)",
+    "description": "Mobilising 1M+ people across 150+ countries on the link between climate change and access to safe, nutritious, sustainable food.",
+    "content_hook": "Food-system and agriculture messaging. Connect food choices to climate outcomes. Educational content angle works well for community-facing brands.",
+    "relevance_tags": [
+      "food_systems",
+      "education",
+      "community_mobilisation"
+    ],
+    "url": "https://www.fee.global/global-action-days-2026",
+    "confirmed": true
+  },
+  {
+    "id": "world-day-safety-health-work-2026",
+    "name": "World Day for Safety and Health at Work",
+    "emoji": "🦺",
+    "start_date": "2026-04-28",
+    "end_date": "2026-04-28",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "social_justice",
+      "just_transition",
+      "supply_chain"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "International Labour Organization",
+    "description": "Focuses on worker safety and decent work — connects to just transition, ethical supply chains, and green jobs.",
+    "content_hook": "Just transition messaging. Brands with manufacturing or supply chain stories can highlight worker welfare and safe working conditions.",
+    "relevance_tags": [
+      "worker_safety",
+      "just_transition",
+      "green_jobs"
+    ],
+    "url": "https://www.ilo.org/global/topics/safety-and-health-at-work/events-training/events-meetings/safeday2026/lang--en/index.htm",
+    "confirmed": true
+  },
+  {
+    "id": "just-transition-fossil-fuels-conference-2026",
+    "name": "International Conference on Just Transition Away from Fossil Fuels",
+    "emoji": "⛽",
+    "start_date": "2026-04-28",
+    "end_date": "2026-04-29",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "energy_transition",
+      "just_transition",
+      "fossil_fuels"
+    ],
+    "region": "latam",
+    "region_detail": "Santa Marta, Colombia",
+    "organiser": "Government of Colombia / international partners",
+    "description": "Landmark gathering uniting governments and experts to push concrete action toward a just, coordinated phase-out of fossil fuels ahead of COP31.",
+    "content_hook": "LATAM climate leadership moment — regional energy transition narratives and South American climate policy signals.",
+    "relevance_tags": [
+      "fossil_fuel_phaseout",
+      "latam_policy",
+      "just_transition"
+    ],
+    "url": null,
+    "confirmed": true
+  },
+  {
+    "id": "world-tuna-day-2026",
+    "name": "World Tuna Day",
+    "emoji": "🐟",
+    "start_date": "2026-05-02",
+    "end_date": "2026-05-02",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "oceans",
+      "biodiversity",
+      "sustainable_fishing"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Raises awareness of ocean biodiversity, sustainable fishing practices, and the economic importance of tuna fisheries globally.",
+    "content_hook": "Ocean health and sustainable sourcing angle for brands with marine or food supply chain connections.",
+    "relevance_tags": [
+      "oceans",
+      "sustainable_sourcing",
+      "marine_biodiversity"
+    ],
+    "url": "https://www.un.org/en/observances/tuna-day",
+    "confirmed": true
+  },
+  {
+    "id": "world-migratory-bird-day-may-2026",
+    "name": "World Migratory Bird Day (Spring)",
+    "emoji": "🐦",
+    "start_date": "2026-05-09",
+    "end_date": "2026-05-09",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "biodiversity",
+      "wildlife",
+      "conservation"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "UNEP / CMS",
+    "description": "Awareness-raising campaign highlighting the need for conservation of migratory birds and their habitats. Celebrated twice yearly (May and October).",
+    "content_hook": "Biodiversity and habitat connectivity stories. Visual, feel-good content with conservation messaging.",
+    "relevance_tags": [
+      "migratory_species",
+      "habitat_loss",
+      "conservation"
+    ],
+    "url": "https://www.worldmigratorybirdday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "world-bee-day-2026",
+    "name": "World Bee Day",
+    "emoji": "🐝",
+    "start_date": "2026-05-20",
+    "end_date": "2026-05-20",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "biodiversity",
+      "food",
+      "pollinators"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / FAO",
+    "description": "Highlights the role of pollinators in food security and ecosystem health. Bees and other pollinators are critical for 75% of food crops.",
+    "content_hook": "Biodiversity storytelling with high engagement potential. Connect to agriculture, food systems, and what happens when pollinators disappear.",
+    "relevance_tags": [
+      "pollinators",
+      "food_security",
+      "biodiversity"
+    ],
+    "url": "https://www.un.org/en/observances/bee-day",
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-biodiversity-2026",
+    "name": "International Day for Biological Diversity",
+    "emoji": "🦋",
+    "start_date": "2026-05-22",
+    "end_date": "2026-05-22",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "biodiversity",
+      "conservation",
+      "ecosystems"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / CBD",
+    "description": "Raises awareness of biodiversity issues aligned with the Kunming-Montreal Global Biodiversity Framework. Focus on nature-positive action.",
+    "content_hook": "Biodiversity commitments, nature-positive framing. Brands can share their biodiversity impact assessments or nature-related commitments.",
+    "relevance_tags": [
+      "gbf",
+      "nature_positive",
+      "biodiversity_targets"
+    ],
+    "url": "https://www.un.org/en/observances/biological-diversity-day",
+    "confirmed": true
+  },
+  {
+    "id": "world-environment-day-2026",
+    "name": "World Environment Day",
+    "emoji": "🌿",
+    "start_date": "2026-06-05",
+    "end_date": "2026-06-05",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "environment",
+      "climate",
+      "biodiversity",
+      "pollution"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations Environment Programme (UNEP)",
+    "description": "The UN's principal vehicle for encouraging worldwide environmental awareness and action. Largest global platform for environmental outreach — millions engage annually.",
+    "content_hook": "Biggest sustainability content day alongside Earth Day. All clients need strong, planned content. Campaign launches, impact reports, and public commitments.",
+    "relevance_tags": [
+      "flagship_day",
+      "campaigns",
+      "global_outreach"
+    ],
+    "url": "https://www.worldenvironmentday.global/",
+    "confirmed": true
+  },
+  {
+    "id": "world-oceans-day-2026",
+    "name": "World Oceans Day",
+    "emoji": "🌊",
+    "start_date": "2026-06-08",
+    "end_date": "2026-06-08",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "oceans",
+      "plastic_pollution",
+      "marine_biodiversity"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Highlights marine protection, plastic pollution, packaging challenges, and ocean ecosystem health.",
+    "content_hook": "Plastic pollution, ocean conservation, and blue economy messaging. Strong visual content opportunities with underwater imagery and beach cleanups.",
+    "relevance_tags": [
+      "oceans",
+      "plastic",
+      "blue_economy",
+      "marine_conservation"
+    ],
+    "url": "https://worldoceanday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "world-day-child-labour-2026",
+    "name": "World Day Against Child Labour",
+    "emoji": "👧",
+    "start_date": "2026-06-12",
+    "end_date": "2026-06-12",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "social_justice",
+      "supply_chain",
+      "labour_rights"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "International Labour Organization",
+    "description": "Reinforces ethical labour practices across supply chains and highlights the connection between child labour and environmental exploitation.",
+    "content_hook": "Supply chain ethics angle. Brands can highlight fair labour practices, responsible sourcing, and due diligence in supply chains.",
+    "relevance_tags": [
+      "supply_chain_ethics",
+      "child_labour",
+      "due_diligence"
+    ],
+    "url": "https://www.un.org/en/observances/world-day-against-child-labour",
+    "confirmed": true
+  },
+  {
+    "id": "eu-sustainable-energy-week-2026",
+    "name": "EU Sustainable Energy Week",
+    "emoji": "🇪🇺",
+    "start_date": "2026-06-15",
+    "end_date": "2026-06-19",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "energy",
+      "renewables",
+      "energy_transition"
+    ],
+    "region": "eu",
+    "region_detail": "Brussels, Belgium",
+    "organiser": "European Commission",
+    "description": "Focuses on renewables, efficiency, and energy transition across Europe. Major policy platform for EU energy direction.",
+    "content_hook": "EU energy policy direction and regulatory signals. Relevant for brands with European markets or clean energy technology focus.",
+    "relevance_tags": [
+      "eu_policy",
+      "renewables",
+      "energy_efficiency"
+    ],
+    "url": "https://interactive.eusew.eu/platform/eusew-2026",
+    "confirmed": true
+  },
+  {
+    "id": "world-desertification-drought-day-2026",
+    "name": "World Day to Combat Desertification and Drought",
+    "emoji": "🏜️",
+    "start_date": "2026-06-17",
+    "end_date": "2026-06-17",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "land",
+      "water",
+      "climate_adaptation",
+      "drought"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / UNCCD",
+    "description": "Connects climate risk, land restoration, and resilience. Highlights the 2 billion people living in degraded land areas worldwide.",
+    "content_hook": "Water scarcity, land degradation, and drought resilience. Highly relevant for water-tech, agriculture, and climate adaptation brands.",
+    "relevance_tags": [
+      "desertification",
+      "drought",
+      "land_restoration",
+      "water_scarcity"
+    ],
+    "url": "https://www.un.org/en/observances/desertification-day",
+    "confirmed": true
+  },
+  {
+    "id": "sustainable-gastronomy-day-2026",
+    "name": "Sustainable Gastronomy Day",
+    "emoji": "🍲",
+    "start_date": "2026-06-18",
+    "end_date": "2026-06-18",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "food",
+      "culture",
+      "sustainability"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Celebrates food traditions that are sustainable, promoting local ingredients, reduced waste, and cultural food heritage.",
+    "content_hook": "Local food systems, farm-to-table, and cultural food traditions. Engaging lifestyle content that connects food to sustainability.",
+    "relevance_tags": [
+      "sustainable_food",
+      "local_sourcing",
+      "food_culture"
+    ],
+    "url": "https://www.un.org/en/observances/sustainable-gastronomy-day",
+    "confirmed": true
+  },
+  {
+    "id": "climate-week-london-2026",
+    "name": "Climate Week London / World Conference on Climate Change & Sustainability",
+    "emoji": "🇬🇧",
+    "start_date": "2026-06-18",
+    "end_date": "2026-06-19",
+    "duration_type": "event",
+    "category": "climate_week",
+    "themes": [
+      "climate",
+      "innovation",
+      "equity",
+      "sustainability"
+    ],
+    "region": "eu",
+    "region_detail": "London, UK",
+    "organiser": "The People Events",
+    "description": "5th edition themed 'Solutions for Climate: Innovation, Equity & Sustainability'. Brings together climate experts, policymakers, and innovators globally.",
+    "content_hook": "European climate thought leadership moment. Good for brands with UK/EU presence or audiences to position around innovation and equity.",
+    "relevance_tags": [
+      "eu_climate",
+      "innovation",
+      "thought_leadership"
+    ],
+    "url": "https://climateweek.thepeopleevents.com/",
+    "confirmed": true
+  },
+  {
+    "id": "trellis-impact-2026",
+    "name": "Trellis Impact 2026",
+    "emoji": "🌉",
+    "start_date": "2026-06-23",
+    "end_date": "2026-06-25",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "climate_tech",
+      "carbon",
+      "circular_economy",
+      "clean_energy"
+    ],
+    "region": "us",
+    "region_detail": "San Francisco, CA, USA",
+    "organiser": "Trellis",
+    "description": "Major sustainability business conference at Moscone West — 500+ speakers, 4,000+ attendees covering carbon, energy, circular economy, and climate tech.",
+    "content_hook": "Another SF moment for Sample Client. Track trends in corporate sustainability, climate tech, and carbon removal for content ideas and networking.",
+    "relevance_tags": [
+      "climate_tech",
+      "corporate_sustainability",
+      "carbon_removal"
+    ],
+    "url": null,
+    "confirmed": true
+  },
+  {
+    "id": "hlpf-2026",
+    "name": "UN High-Level Political Forum (HLPF)",
+    "emoji": "🏛️",
+    "start_date": "2026-07-06",
+    "end_date": "2026-07-15",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "sdgs",
+      "sustainable_development",
+      "policy"
+    ],
+    "region": "global",
+    "region_detail": "New York, USA",
+    "organiser": "United Nations ECOSOC",
+    "description": "Annual UN forum reviewing progress on SDGs — 2026 focuses on Goals 6 (Water), 7 (Energy), 9 (Industry/Innovation), 11 (Cities), and 17 (Partnerships).",
+    "content_hook": "SDG alignment content. Brands can map their impact to SDGs 6, 7, 9, 11, and 17 and share progress stories.",
+    "relevance_tags": [
+      "sdgs",
+      "voluntary_national_reviews",
+      "policy_review"
+    ],
+    "url": "https://hlpf.un.org/",
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-mangroves-2026",
+    "name": "International Day for Conservation of Mangrove Ecosystems",
+    "emoji": "🌴",
+    "start_date": "2026-07-26",
+    "end_date": "2026-07-26",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "oceans",
+      "biodiversity",
+      "coastal_resilience",
+      "carbon_sequestration"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "UNESCO",
+    "description": "Raises awareness of mangrove ecosystems and their role in coastal resilience, blue carbon storage, and marine biodiversity.",
+    "content_hook": "Blue carbon and coastal resilience angle — mangroves as critical coastal ecosystems.",
+    "relevance_tags": [
+      "mangroves",
+      "blue_carbon",
+      "coastal_ecuador"
+    ],
+    "url": "https://www.worldmangroveday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "lacs-2026",
+    "name": "Latin America Climate Summit (LACS)",
+    "emoji": "🌎",
+    "start_date": "2026-08-01",
+    "end_date": "2026-08-31",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "carbon_markets",
+      "climate_finance",
+      "latam_policy"
+    ],
+    "region": "latam",
+    "region_detail": "Monterrey, Mexico",
+    "organiser": "IETA",
+    "description": "Premier gathering for carbon market practitioners in Latin America and Caribbean — 800+ delegates on carbon pricing, climate finance, and market cooperation.",
+    "content_hook": "LATAM carbon market developments, climate finance signals, and regional policy direction.",
+    "relevance_tags": [
+      "carbon_markets",
+      "latam",
+      "climate_finance"
+    ],
+    "url": "https://www.ieta.org/events/latin-america-climate-summit",
+    "confirmed": false
+  },
+  {
+    "id": "intl-day-indigenous-peoples-2026",
+    "name": "International Day of the World's Indigenous Peoples",
+    "emoji": "🪶",
+    "start_date": "2026-08-09",
+    "end_date": "2026-08-09",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "social_justice",
+      "biodiversity",
+      "indigenous_knowledge"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Celebrates indigenous cultures and highlights their critical role in environmental stewardship, land management, and climate adaptation.",
+    "content_hook": "Indigenous knowledge and environmental stewardship. Relevant for Ecuador and India — frontline communities in climate adaptation and biodiversity conservation.",
+    "relevance_tags": [
+      "indigenous_rights",
+      "traditional_knowledge",
+      "land_stewardship"
+    ],
+    "url": "https://www.un.org/en/observances/indigenous-day",
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-clean-air-2026",
+    "name": "International Day of Clean Air for Blue Skies",
+    "emoji": "💨",
+    "start_date": "2026-09-07",
+    "end_date": "2026-09-07",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "air_quality",
+      "health",
+      "pollution"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Focuses on tackling air pollution through individual, community, and government action. Air pollution kills 7 million people annually.",
+    "content_hook": "Air quality messaging. Relevant for clients in air monitoring, clean tech, urban sustainability, or health-environment intersections.",
+    "relevance_tags": [
+      "air_pollution",
+      "public_health",
+      "clean_tech"
+    ],
+    "url": "https://www.un.org/en/observances/clean-air-day",
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-ozone-2026",
+    "name": "International Day for Preservation of the Ozone Layer",
+    "emoji": "🛡️",
+    "start_date": "2026-09-16",
+    "end_date": "2026-09-16",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "climate",
+      "policy",
+      "international_cooperation"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Celebrates the Montreal Protocol's success in protecting the ozone layer — proof that global environmental cooperation can work.",
+    "content_hook": "A rare environmental success story. Use as a 'proof that global cooperation works' narrative — hopeful messaging in a year of climate urgency.",
+    "relevance_tags": [
+      "montreal_protocol",
+      "success_story",
+      "international_cooperation"
+    ],
+    "url": "https://www.un.org/en/observances/ozone-day",
+    "confirmed": true
+  },
+  {
+    "id": "world-cleanup-day-2026",
+    "name": "World Cleanup Day",
+    "emoji": "🧹",
+    "start_date": "2026-09-19",
+    "end_date": "2026-09-19",
+    "duration_type": "day",
+    "category": "awareness_campaign",
+    "themes": [
+      "waste",
+      "community_action",
+      "pollution"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "Let's Do It World",
+    "description": "Global social action day combating litter by encouraging communities worldwide to clean up their environments.",
+    "content_hook": "Community engagement and team participation moment. Brands can organise local cleanups and share visual before/after content.",
+    "relevance_tags": [
+      "community_action",
+      "waste",
+      "employee_engagement"
+    ],
+    "url": "https://www.worldcleanupday.org/",
+    "confirmed": true
+  },
+  {
+    "id": "climate-week-nyc-2026",
+    "name": "Climate Week NYC",
+    "emoji": "🗽",
+    "start_date": "2026-09-20",
+    "end_date": "2026-09-27",
+    "duration_type": "event",
+    "category": "climate_week",
+    "themes": [
+      "climate",
+      "business",
+      "policy",
+      "finance",
+      "energy"
+    ],
+    "region": "us",
+    "region_detail": "New York, NY, USA",
+    "organiser": "Climate Group",
+    "description": "The biggest global climate event of its kind — 100,000+ participants, 5,500+ leaders, 1,000+ events alongside UN General Assembly. Covers energy, finance, food, transport, nature.",
+    "content_hook": "Major content moment for ALL clients. Plan thought leadership pieces, partnership announcements, and social media campaigns around this week.",
+    "relevance_tags": [
+      "flagship_event",
+      "unga",
+      "corporate_climate",
+      "networking"
+    ],
+    "url": "https://www.climateweeknyc.org/",
+    "confirmed": true
+  },
+  {
+    "id": "unga-2026",
+    "name": "UN General Assembly (UNGA 81)",
+    "emoji": "🇺🇳",
+    "start_date": "2026-09-15",
+    "end_date": "2026-09-30",
+    "duration_type": "event",
+    "category": "policy_regulatory",
+    "themes": [
+      "policy",
+      "sdgs",
+      "climate",
+      "development"
+    ],
+    "region": "global",
+    "region_detail": "New York, USA",
+    "organiser": "United Nations",
+    "description": "Annual gathering of world leaders where climate and sustainability are increasingly central. Sets political tone ahead of COP31.",
+    "content_hook": "Track policy announcements and national commitments. Monitor for client-relevant regulatory or policy signals in the lead-up to COP31.",
+    "relevance_tags": [
+      "geopolitics",
+      "national_commitments",
+      "pre_cop"
+    ],
+    "url": "https://www.un.org/en/ga/",
+    "confirmed": true
+  },
+  {
+    "id": "plastics-treaty-negotiations-2026",
+    "name": "Global Plastics Treaty Negotiations",
+    "emoji": "🧴",
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-30",
+    "duration_type": "event",
+    "category": "policy_regulatory",
+    "themes": [
+      "plastic_pollution",
+      "circular_economy",
+      "policy"
+    ],
+    "region": "global",
+    "region_detail": "Location TBC",
+    "organiser": "UNEP / INC",
+    "description": "Next round of global plastics treaty negotiations — potentially August or September 2026. Aiming for a legally binding instrument on plastic pollution.",
+    "content_hook": "Circular economy and plastic reduction messaging. Major regulatory signal for packaging, materials, FMCG, and consumer brands.",
+    "relevance_tags": [
+      "plastics_treaty",
+      "circular_economy",
+      "packaging"
+    ],
+    "url": null,
+    "confirmed": false
+  },
+  {
+    "id": "brazil-presidential-election-2026",
+    "name": "Brazil Presidential Election (Round 1)",
+    "emoji": "🇧🇷",
+    "start_date": "2026-10-04",
+    "end_date": "2026-10-04",
+    "duration_type": "day",
+    "category": "policy_regulatory",
+    "themes": [
+      "policy",
+      "deforestation",
+      "latam_climate"
+    ],
+    "region": "latam",
+    "region_detail": "Brazil",
+    "organiser": "Government of Brazil",
+    "description": "Could determine the future of Amazon deforestation policy and Brazil's climate leadership post-COP30. Lula is current favourite.",
+    "content_hook": "LATAM climate policy implications. Content hook around how elections shape climate futures and deforestation trajectories.",
+    "relevance_tags": [
+      "brazil_elections",
+      "amazon",
+      "deforestation_policy"
+    ],
+    "url": null,
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-disaster-risk-2026",
+    "name": "International Day for Disaster Risk Reduction",
+    "emoji": "🌪️",
+    "start_date": "2026-10-13",
+    "end_date": "2026-10-13",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "climate_adaptation",
+      "resilience",
+      "disaster_risk"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / UNDRR",
+    "description": "Promotes global culture of disaster risk awareness and reduction. Increasingly linked to climate-driven extreme weather events.",
+    "content_hook": "Climate adaptation and resilience messaging. Tie extreme weather events to climate change and the need for preparedness and resilient infrastructure.",
+    "relevance_tags": [
+      "disaster_risk",
+      "resilience",
+      "extreme_weather"
+    ],
+    "url": "https://www.un.org/en/observances/disaster-reduction-day",
+    "confirmed": true
+  },
+  {
+    "id": "world-food-day-2026",
+    "name": "World Food Day",
+    "emoji": "🌾",
+    "start_date": "2026-10-16",
+    "end_date": "2026-10-16",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "food",
+      "agriculture",
+      "food_security"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / FAO",
+    "description": "Highlights food security, sustainable agriculture, and the food-climate nexus. One of the most important days for food system transformation messaging.",
+    "content_hook": "Sustainable food systems content. Agriculture and supply chain clients can share impact stories, food security data, and innovation in farming.",
+    "relevance_tags": [
+      "food_security",
+      "sustainable_agriculture",
+      "food_climate_nexus"
+    ],
+    "url": "https://www.fao.org/world-food-day",
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-poverty-2026",
+    "name": "International Day for the Eradication of Poverty",
+    "emoji": "🤝",
+    "start_date": "2026-10-17",
+    "end_date": "2026-10-17",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "social_justice",
+      "sdgs",
+      "equity"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Raises awareness of the need to eradicate poverty — increasingly connected to climate vulnerability and just transition narratives.",
+    "content_hook": "Climate and poverty intersection. Those least responsible for climate change are most affected — powerful equity messaging.",
+    "relevance_tags": [
+      "poverty",
+      "climate_vulnerability",
+      "equity"
+    ],
+    "url": "https://www.un.org/en/observances/day-for-eradicating-poverty",
+    "confirmed": true
+  },
+  {
+    "id": "cop17-biodiversity-2026",
+    "name": "UN Biodiversity Conference (COP17)",
+    "emoji": "🦜",
+    "start_date": "2026-10-19",
+    "end_date": "2026-10-30",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "biodiversity",
+      "conservation",
+      "nature_positive"
+    ],
+    "region": "global",
+    "region_detail": "Armenia",
+    "organiser": "Convention on Biological Diversity (CBD)",
+    "description": "Follow-up to the Kunming-Montreal Global Biodiversity Framework. Reviews implementation of 30x30 targets and nature-positive commitments globally.",
+    "content_hook": "Nature-positive commitments and biodiversity targets. All clients should be mapping their impact on nature and aligning with the Global Biodiversity Framework.",
+    "relevance_tags": [
+      "gbf",
+      "30x30",
+      "nature_positive",
+      "biodiversity_cop"
+    ],
+    "url": null,
+    "confirmed": true
+  },
+  {
+    "id": "world-cities-day-2026",
+    "name": "World Cities Day",
+    "emoji": "🏙️",
+    "start_date": "2026-10-31",
+    "end_date": "2026-10-31",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "urbanisation",
+      "cities",
+      "green_infrastructure"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / UN-Habitat",
+    "description": "Promotes sustainable urbanisation and international cooperation on urban challenges including housing, transport, and green infrastructure.",
+    "content_hook": "Smart cities, urban sustainability, and green infrastructure messaging. Relevant for clients in built environment, transport, or urban tech.",
+    "relevance_tags": [
+      "sustainable_cities",
+      "sdg11",
+      "urban_resilience"
+    ],
+    "url": "https://www.un.org/en/observances/cities-day",
+    "confirmed": true
+  },
+  {
+    "id": "unblocktober-2026",
+    "name": "Unblocktober",
+    "emoji": "🚰",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "duration_type": "month",
+    "category": "awareness_campaign",
+    "themes": [
+      "water",
+      "waste",
+      "oceans"
+    ],
+    "region": "global",
+    "region_detail": "UK-originated",
+    "organiser": "Unblocktober",
+    "description": "Month-long campaign to improve the health of drains, sewers, watercourses, and seas by reducing waste going down the drain.",
+    "content_hook": "Water pollution and waste reduction. Connects everyday consumer behaviour to ocean health — practical tips content that drives engagement.",
+    "relevance_tags": [
+      "water_pollution",
+      "behaviour_change",
+      "ocean_health"
+    ],
+    "url": "https://www.unblocktober.org/",
+    "confirmed": true
+  },
+  {
+    "id": "intl-day-environment-war-2026",
+    "name": "International Day for Preventing Exploitation of Environment in War",
+    "emoji": "⚔️",
+    "start_date": "2026-11-06",
+    "end_date": "2026-11-06",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "conflict",
+      "environment",
+      "justice"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Raises awareness of environmental destruction during armed conflict and its lasting impact on ecosystems and communities.",
+    "content_hook": "Environmental justice angle. Connect conflict zones to ecological degradation and long-term climate vulnerability.",
+    "relevance_tags": [
+      "environmental_justice",
+      "conflict",
+      "ecosystem_destruction"
+    ],
+    "url": "https://www.un.org/en/observances/environment-in-war-protection",
+    "confirmed": true
+  },
+  {
+    "id": "cop31-2026",
+    "name": "COP31 — UN Climate Change Conference",
+    "emoji": "🌡️",
+    "start_date": "2026-11-09",
+    "end_date": "2026-11-20",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "climate",
+      "policy",
+      "climate_finance",
+      "ndcs",
+      "adaptation",
+      "loss_and_damage"
+    ],
+    "region": "global",
+    "region_detail": "Antalya, Türkiye",
+    "organiser": "UNFCCC",
+    "description": "The biggest climate event of 2026. Joint Türkiye-Australia presidency. Focus on NDCs 3.0, climate finance (NCQG), post-Global Stocktake implementation, and fossil fuel transition roadmaps.",
+    "content_hook": "THE single most important climate moment of 2026. All clients need pre/during/post COP content. Track commitments, controversies, outcomes, and what it means for their sector.",
+    "relevance_tags": [
+      "cop31",
+      "ndcs",
+      "climate_finance",
+      "fossil_fuel_transition",
+      "flagship_event"
+    ],
+    "url": "https://unfccc.int/cop31",
+    "confirmed": true
+  },
+  {
+    "id": "imo-mepc-2026",
+    "name": "IMO Marine Environment Protection Committee",
+    "emoji": "🚢",
+    "start_date": "2026-11-16",
+    "end_date": "2026-11-20",
+    "duration_type": "event",
+    "category": "policy_regulatory",
+    "themes": [
+      "shipping",
+      "decarbonisation",
+      "oceans"
+    ],
+    "region": "global",
+    "region_detail": "London, UK",
+    "organiser": "International Maritime Organisation",
+    "description": "Overlaps with COP31. Determines green shipping measures after US and Saudi Arabia won a year's delay in 2025. Key moment for maritime decarbonisation.",
+    "content_hook": "Shipping decarbonisation angle. Relevant for brands with maritime supply chains, blue economy focus, or trade-dependent operations.",
+    "relevance_tags": [
+      "green_shipping",
+      "maritime",
+      "decarbonisation"
+    ],
+    "url": "https://www.imo.org/",
+    "confirmed": true
+  },
+  {
+    "id": "world-toilet-day-2026",
+    "name": "World Toilet Day",
+    "emoji": "🚽",
+    "start_date": "2026-11-19",
+    "end_date": "2026-11-19",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "water",
+      "sanitation",
+      "health",
+      "sdgs"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / UN-Water",
+    "description": "Raises awareness of the 3.5 billion people living without access to safely managed sanitation. Connected to water quality and public health.",
+    "content_hook": "Sanitation and water access messaging. Connects to SDG 6 and public health outcomes. Can be surprisingly engaging content.",
+    "relevance_tags": [
+      "sanitation",
+      "sdg6",
+      "water_access"
+    ],
+    "url": "https://www.un.org/en/observances/toilet-day",
+    "confirmed": true
+  },
+  {
+    "id": "world-sustainable-transport-day-2026",
+    "name": "World Sustainable Transport Day",
+    "emoji": "🚲",
+    "start_date": "2026-11-26",
+    "end_date": "2026-11-26",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "transport",
+      "emissions",
+      "urban_mobility"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Promotes low-carbon transport and sustainable mobility solutions — from EVs and public transit to cycling infrastructure.",
+    "content_hook": "Sustainable mobility and transport decarbonisation. Relevant for urban sustainability, EV, and infrastructure-focused brands.",
+    "relevance_tags": [
+      "sustainable_transport",
+      "evs",
+      "urban_mobility"
+    ],
+    "url": "https://www.un.org/en/observances/sustainable-transport-day",
+    "confirmed": true
+  },
+  {
+    "id": "unccd-cop17-2026",
+    "name": "UNCCD COP17 — Land/Desertification Conference",
+    "emoji": "🏜️",
+    "start_date": "2026-11-01",
+    "end_date": "2026-11-30",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "land",
+      "desertification",
+      "drought",
+      "climate_adaptation"
+    ],
+    "region": "global",
+    "region_detail": "Location TBC",
+    "organiser": "UN Convention to Combat Desertification",
+    "description": "Third 'triple COP' event of 2026 alongside climate (COP31) and biodiversity (COP17). Focused on land degradation, drought, and desertification.",
+    "content_hook": "Land restoration and drought resilience. Relevant for water-tech clients and agriculture-linked brands. Ties into food security narratives.",
+    "relevance_tags": [
+      "land_degradation",
+      "drought",
+      "triple_cop"
+    ],
+    "url": null,
+    "confirmed": false
+  },
+  {
+    "id": "un-water-conference-2026",
+    "name": "UN Water Conference",
+    "emoji": "💧",
+    "start_date": "2026-12-02",
+    "end_date": "2026-12-04",
+    "duration_type": "event",
+    "category": "conference",
+    "themes": [
+      "water",
+      "sanitation",
+      "sdgs",
+      "climate_adaptation"
+    ],
+    "region": "global",
+    "region_detail": "Location TBC",
+    "organiser": "United Nations",
+    "description": "Major UN conference on water — the first in decades. Critical for SDG 6 progress and addressing the global water crisis.",
+    "content_hook": "Landmark water moment. Huge for water-tech brands. Frame around water scarcity, innovation, and the water-climate-food nexus.",
+    "relevance_tags": [
+      "water_crisis",
+      "sdg6",
+      "water_innovation"
+    ],
+    "url": null,
+    "confirmed": true
+  },
+  {
+    "id": "world-soil-day-2026",
+    "name": "World Soil Day",
+    "emoji": "🪱",
+    "start_date": "2026-12-05",
+    "end_date": "2026-12-05",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "land",
+      "food",
+      "biodiversity"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / FAO",
+    "description": "Raises awareness of healthy soils as a critical living resource for food production, ecosystem health, and climate regulation.",
+    "content_hook": "Soil health and regenerative agriculture. Materials and food brands can connect to land-use, carbon-in-soil, and regenerative narratives.",
+    "relevance_tags": [
+      "soil_health",
+      "regenerative_agriculture",
+      "carbon_sequestration"
+    ],
+    "url": "https://www.fao.org/world-soil-day",
+    "confirmed": true
+  },
+  {
+    "id": "human-rights-day-2026",
+    "name": "Human Rights Day",
+    "emoji": "✊",
+    "start_date": "2026-12-10",
+    "end_date": "2026-12-10",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "social_justice",
+      "equity",
+      "climate_justice"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations",
+    "description": "Celebrates the adoption of the Universal Declaration of Human Rights. Increasingly linked to climate justice, environmental rights, and corporate accountability.",
+    "content_hook": "Climate justice and rights-based approach to sustainability. Connect human rights to environmental outcomes and corporate responsibility.",
+    "relevance_tags": [
+      "human_rights",
+      "climate_justice",
+      "corporate_accountability"
+    ],
+    "url": "https://www.un.org/en/observances/human-rights-day",
+    "confirmed": true
+  },
+  {
+    "id": "intl-mountain-day-2026",
+    "name": "International Mountain Day",
+    "emoji": "🏔️",
+    "start_date": "2026-12-11",
+    "end_date": "2026-12-11",
+    "duration_type": "day",
+    "category": "un_international_day",
+    "themes": [
+      "biodiversity",
+      "water",
+      "climate_change"
+    ],
+    "region": "global",
+    "region_detail": null,
+    "organiser": "United Nations / FAO",
+    "description": "Highlights the importance of mountains for water supply, biodiversity, and climate regulation. Mountain ecosystems are among the most climate-sensitive.",
+    "content_hook": "Mountain ecosystems and glacial retreat storytelling. Relevant for climate adaptation, water scarcity, and Andean/Himalayan narratives.",
+    "relevance_tags": [
+      "mountains",
+      "glaciers",
+      "water_towers"
+    ],
+    "url": "https://www.fao.org/international-mountain-day",
+    "confirmed": true
+  },
+  {
+    "id": "g20-miami-2026",
+    "name": "G20 Summit",
+    "emoji": "🇺🇸",
+    "start_date": "2026-12-14",
+    "end_date": "2026-12-15",
+    "duration_type": "event",
+    "category": "policy_regulatory",
+    "themes": [
+      "policy",
+      "energy",
+      "geopolitics"
+    ],
+    "region": "us",
+    "region_detail": "Miami, FL, USA",
+    "organiser": "G20 / US Presidency",
+    "description": "US-hosted G20. Indications the US may use it to promote fossil fuels. South Africa excluded partly due to green policies.",
+    "content_hook": "Monitor geopolitical climate dynamics. Content hook around corporate climate leadership maintaining momentum even when governments falter.",
+    "relevance_tags": [
+      "g20",
+      "geopolitics",
+      "fossil_fuels",
+      "us_policy"
+    ],
+    "url": null,
+    "confirmed": true
+  }
+]

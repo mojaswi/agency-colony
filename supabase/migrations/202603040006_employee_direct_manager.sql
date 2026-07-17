@@ -4,4 +4,4 @@ alter table app.employees
 
 -- Populate from existing hardcoded mappings
 update app.employees set direct_manager_email = 'admin@youragency.com'
-  where email in ('leader2@youragency.com', 'leader3@youragency.com', 'leader1@youragency.com');
+  where email in ('creative-lead@youragency.com', 'am-lead@youragency.com', 'strategy-lead@youragency.com');

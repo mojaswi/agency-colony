@@ -1,13 +1,13 @@
 -- Invoice Center: table for tracking uploaded invoices, viewer access function,
 -- RLS policies, and notification kind for email reminders.
 
--- 1. Viewer function — only Finance Admin (finance), Leader Three, Admin User can see all invoices
+-- 1. Viewer function — only finance (finance), the AM lead, the superadmin can see all invoices
 CREATE OR REPLACE FUNCTION app.is_invoice_viewer()
 RETURNS boolean AS $$
   SELECT EXISTS (
     SELECT 1 FROM app.employees
     WHERE auth_user_id = auth.uid()
-      AND email IN ('finance@youragency.com', 'leader3@youragency.com', 'admin@youragency.com')
+      AND email IN ('finance@youragency.com', 'am-lead@youragency.com', 'admin@youragency.com')
   );
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 

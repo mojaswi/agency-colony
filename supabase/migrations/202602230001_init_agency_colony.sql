@@ -757,11 +757,11 @@ execute function app.prepare_leave_request();
 -- ---------- Locked department mapping ----------
 insert into app.departments (name, approver_email, leave_tracking_enabled, sort_order)
 values
-  ('Acc Management', 'leader3@youragency.com', true, 10),
-  ('Art', 'leader2@youragency.com', true, 20),
-  ('Copy', 'leader2@youragency.com', true, 30),
-  ('Video', 'leader2@youragency.com', true, 40),
-  ('Strategy', 'leader1@youragency.com', true, 50),
+  ('Acc Management', 'am-lead@youragency.com', true, 10),
+  ('Art', 'creative-lead@youragency.com', true, 20),
+  ('Copy', 'creative-lead@youragency.com', true, 30),
+  ('Video', 'creative-lead@youragency.com', true, 40),
+  ('Strategy', 'strategy-lead@youragency.com', true, 50),
   ('Leadership', 'admin@youragency.com', true, 60),
   ('Finance', null, false, 90)
 on conflict (name)
@@ -799,7 +799,7 @@ select
 from finance_dept fd
 cross join (
   values
-    ('user2@youragency.com', 'Finance Head', 'Finance Head'),
+    ('finance2@youragency.com', 'Finance Head', 'Finance Head'),
     ('finance@youragency.com', 'Finance Admin', 'Finance Controller')
 ) as seed(email, full_name, role_title)
 on conflict (email)
@@ -839,9 +839,9 @@ from leadership_dept ld
 cross join (
   values
     ('admin@youragency.com', 'Admin User', 'admin', 'Founder'),
-    ('leader1@youragency.com', 'Leader One', 'leadership', 'Leadership Approver'),
-    ('leader2@youragency.com', 'Leader Two', 'leadership', 'Leadership Approver'),
-    ('leader3@youragency.com', 'Leader Three', 'leadership', 'Leadership Approver')
+    ('strategy-lead@youragency.com', 'Strategy Lead', 'leadership', 'Leadership Approver'),
+    ('creative-lead@youragency.com', 'Creative Lead', 'leadership', 'Leadership Approver'),
+    ('am-lead@youragency.com', 'Account Lead', 'leadership', 'Leadership Approver')
 ) as seed(email, full_name, access_level, role_title)
 on conflict (email)
 do update

@@ -1,126 +1,113 @@
 # Agency Colony
 
-A complete, production-ready resource management platform built for digital agencies. One codebase, 13 screens, zero framework bloat.
+An open-source resource management platform for digital agencies. One codebase, 13 screens, no framework — vanilla JavaScript, Supabase, and Netlify.
 
-Built with vanilla JavaScript, Supabase, and Netlify — deployed and battle-tested at a real agency.
+Built and run daily at a real agency: allocation, tasks, leave, BD pipeline, invoices, and client analytics with AI insights.
 
----
-
-## What You Get
-
-### Business Development
-- **Deal Flow Pipeline** — Kanban board with drag-and-drop, stage tracking (Qualifying > Pitching > Proposal > Negotiating > Contracted), per-column sorting, company/brand switching
-- **Client Linking** — Connect deals to active clients when contracted, with mandatory linking enforcement
-- **Pipeline Stats** — Live counters for open deals, overdue, stalled, contracted, and lost — each clickable as a filter
-- **Multi-brand Support** — Run separate BD pipelines for different brands/entities under one roof
-
-### Resource Management
-- **Team Dashboard** — Bird's-eye view of who's working on what, with utilization heatmaps and department breakdowns
-- **Weekly Allocation** — Assign team hours across client projects, with week and month views
-- **Work Planner** — Daily task management with drag-and-drop reordering, auto-rollover of incomplete tasks, and weekly archiving of completed items
-
-### People & Leave
-- **Leave Center** — Submit requests, approval workflows, balance tracking, cycle management, and leadership overviews
-- **People Directory** — Employee profiles with utilization data, department filters, and profile cards
-- **Employee Profiles** — Personal details, allocation history, invoice uploads
-
-### Client & Finance
-- **Client Management** — Active/archived client tracking with ownership and engagement types
-- **Invoice Center** — Monthly invoice tracking with upload status per employee
-- **Client Analytics** — LinkedIn analytics import with AI-powered performance insights
-
-### Internal Tools
-- **Bugs & Features Board** — Internal feedback system with upvotes, replies, status tracking, and email notifications
-- **Admin Settings** — User access control, department management, leave cycle configuration
-- **Home Feed** — Dashboard with team stats, birthdays, sustainability calendar, and activity timeline
+> **v2 (July 2026)** — a full re-release. Adds multi-platform client analytics (LinkedIn + Instagram + newsletter/community), an AI insights layer, DB-backed configuration, a test suite, and a modular front end. See [What's new in v2](#whats-new-in-v2).
 
 ---
 
-## Key Capabilities
+## What you get
 
-| Capability | Details |
-|---|---|
-| **Authentication** | Google OAuth (domain-restricted) via Supabase Auth |
-| **Role-based Access** | Superadmin, Leadership, Finance, and Employee roles with granular screen/action permissions |
-| **Dark Mode** | Full light/dark theme support with system preference detection |
-| **Mobile Responsive** | Bottom tab navigation, touch-friendly layouts across all screens |
-| **Real-time Updates** | Supabase subscriptions for live data |
-| **Email Notifications** | Automated reminders for tasks, leaves, invoices, birthdays, and allocation |
-| **Row-Level Security** | Every table locked down with Supabase RLS policies — users only see what they should |
-| **Excel Export** | Export allocations and reports to .xlsx |
-| **Drag & Drop** | Kanban boards, task reordering, priority management |
-| **Scheduled Jobs** | Netlify cron functions for daily reminders, weekly nudges, and invoice alerts |
+### Business development
+- **Deal Flow** — Kanban pipeline (qualified → discovery → proposal → negotiated → contracted), drag-and-drop, stalled/lost tracking, per-column sorting
+- **Client linking** — contracted deals link to clients; termination tracking (good/bad) separates completed engagements from losses
+- **Pipeline stats** — live counters, each clickable as a filter
+
+### Resource management
+- **Resource Planner** — team matrix with utilization heatmaps, staleness indicators, department filters
+- **My Allocation** — weekly/monthly percentage or hours editor, copy-from-last-week, and **suggest-from-tasks** (pre-fills your split from the week's task planner)
+- **My Work** — daily tasks with carry-forward, weekly backlog, monthly recurring rules, priority ordering, deadlines, and task links
+
+### People and leave
+- **Leave Center** — requests, approvals routed to the direct manager, balances, half-day support, calendar-day policy, cycle rollover
+- **Team Directory / Profiles** — utilization, allocations, birthdays, onboarding checklists
+- **Policy** — versioned policy documents with acknowledgment tracking
+
+### Clients and finance
+- **Clients** — active/archived registry, engagement + scope summary, team allocations and active tasks per client, Scope & Coverage planning
+- **Invoice Center** — monthly upload tracking, PIN-gated
+- **Client Analytics** — see below
+
+### Client analytics (the big one)
+Upload the exports your team already downloads; the app parses, merges, and reads them.
+
+| Platform | Sources | What you get |
+|---|---|---|
+| **LinkedIn** | Content / Followers / Visitors exports | week-on-week KPIs, impression + engagement trends, audience demographics with target-persona highlighting, post table, per-post analysis |
+| **Instagram** | Meta post export + Insights metric CSVs | summary KPIs, per-metric daily trend charts, post performance |
+| **Community** | Any per-send comms workbook | subscribers, forum members, per-send-type open/click rates, region + segment breakdowns |
+
+- **Cross-platform Overview** — one snapshot card per platform with week-on-week deltas and a data-freshness chip
+- **AI insights** — Claude-powered analyses at every level (weekly pulse, monthly trend, brand signal, per-post, Instagram, community), each copyable straight into a client email
+- **Idempotent uploads** — re-uploading a report merges by stable key; no duplicates
+- **Honest staleness** — freshness is computed from what the data *covers*, not when someone clicked upload
+
+### Under the hood
+- **Notifications** — an action-item bell computed from live data (no read-state to maintain) + email via Resend
+- **Scheduled jobs** — daily/weekly reminders with heartbeat monitoring and a health panel, so a dead cron is visible within a day
+- **Config in the DB** — access overrides, manager maps, visibility lists, holidays, and analytics personas are all superadmin-editable in-app, each with an in-code fallback
+- **Row-level security everywhere** — 100+ policies; leave decisions, analytics uploads, and deal access are enforced in the database, not just the UI
+- **Tests** — 71 Node tests over the pure logic modules (`npm test`)
 
 ---
 
-## Tech Stack
+## Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | Vanilla JS — single `app.js`, no build step, no framework |
-| Styling | Single `styles.css` with CSS variables for theming |
-| Database | Supabase (PostgreSQL + Auth + Storage + RLS) |
-| Auth | Google OAuth via Supabase, domain-restricted |
-| Serverless | Netlify Functions (scheduled + webhook) |
-| Email | Resend API for transactional emails |
-| Charts | Chart.js for analytics visualizations |
-| Export | SheetJS (xlsx) for Excel exports |
+- **Frontend:** vanilla JS SPA — no framework, no bundler, no build step
+- **Backend:** Supabase (PostgreSQL + Auth + RPC), RLS enforced
+- **Auth:** Google Workspace OAuth, restricted to your domain
+- **Serverless:** Netlify Functions
+- **Email:** Resend
+- **Vendored:** Chart.js, SheetJS, supabase-js (committed in `vendor/`; only the policy editor pulls Quill from a CDN)
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
 git clone https://github.com/mojaswi/agency-colony.git
 cd agency-colony
+npm install
+cp .env.example .env    # fill in your Supabase + Resend keys
+npm test                # 71 tests should pass
+netlify dev             # http://localhost:8888
 ```
 
-1. Create a [Supabase](https://supabase.com) project
-2. Run the 52 database migrations
-3. Configure Google OAuth for your domain
-4. Set environment variables (see `.env.example`)
-5. Deploy to Netlify
-
-See **[SETUP.md](SETUP.md)** for the full step-by-step guide.
+Full walkthrough — Supabase project, Google OAuth, migrations, first admin — in **[SETUP.md](SETUP.md)**.
 
 ---
 
-## Project Structure
+## What's new in v2
 
-```
-.
-├── index.html              # Single-page app shell
-├── app.js                  # All application logic (~12,000 lines)
-├── styles.css              # All styles with dark mode (~4,800 lines)
-├── assets/                 # Favicons, logos, SVGs
-├── vendor/                 # Supabase JS, Chart.js, SheetJS
-├── netlify/
-│   └── functions/          # 8 serverless functions
-│       ├── runtime-config.js              # Env vars for frontend
-│       ├── daily-reminders.js             # Task, birthday, leave reminders
-│       ├── weekly-allocation-reminder.js  # Monday allocation nudges
-│       ├── invoice-reminder.js            # Invoice upload reminders
-│       ├── leave-submitted.js             # Leave approval notifications
-│       ├── feature-request-notify.js      # Bug/feature notifications
-│       ├── analyze-analytics.js           # AI analytics insights
-│       └── lib/                           # Shared utilities
-├── supabase/
-│   └── migrations/         # 52 schema migrations
-├── .env.example            # All required environment variables
-├── netlify.toml            # Netlify config with cron schedules
-└── SETUP.md                # Detailed setup guide
-```
+- Instagram analytics (post exports + Insights metric CSVs) and a Community Pulse tab for newsletter/forum data
+- Cross-platform analytics Overview; tabs are now per platform and appear only when that platform has data
+- AI insights across every analysis level, with copy-to-clipboard for client emails
+- Data-coverage staleness (`data_through`) replacing upload timestamps
+- DB-backed operational config + analytics personas (no deploys to change them)
+- Leave: half-days, calendar-day policy, direct-manager-only approvals enforced in RLS
+- Recurring monthly tasks; suggest-allocation-from-tasks
+- Cron heartbeats + Scheduled Jobs Health panel
+- Front end split into pure, testable modules (`js/`) with a 71-test suite
+- Notification bell + board reply notifications
 
----
+## Configuration
 
-## Who This Is For
+Most operational settings live in the database and are editable in **Admin Settings → Operational Config** — no deploy needed:
 
-- **Agency founders** who want a custom internal tool without paying for 5 different SaaS subscriptions
-- **Small-to-mid agencies** (5–50 people) managing clients, resources, and BD pipelines
-- **Technical teams** who want full control over their ops platform
+- enforced access levels (who's admin/leadership)
+- team → approver map, direct-manager overrides
+- invoice viewers, hidden employees, deal-flow viewers
+- public holidays
+- analytics target personas per client
 
----
+Each falls back to the in-code default in `js/config.js` if unset. Start there for your first deploy.
+
+## Contributing
+
+Issues and PRs welcome. The codebase deliberately avoids a build step — please keep it that way. Logic that can be pure should live in `js/*.js` with a test in `tests/`.
 
 ## License
 
-MIT — use it, fork it, make it yours.
+MIT — see [LICENSE](LICENSE).
